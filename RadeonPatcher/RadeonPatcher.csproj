@@ -1,0 +1,33 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <ApplicationIcon>Resources\AMDSoftwareConsumer.ico</ApplicationIcon>
+    <AssemblyName>RadeonPatcher</AssemblyName>
+    <Product>RadeonPatcher</Product>
+    <Description>Independent Radeon driver installer and compatibility patcher.</Description>
+    <Authors>RadeonPatcher contributors</Authors>
+    <Copyright>Copyright © RadeonPatcher contributors</Copyright>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\Tools\**\*" LogicalName="Tools\%(RecursiveDir)%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Resources\BundledAudio\**\*" LogicalName="BundledAudio\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Resources\AMDSoftwareConsumer.ico" />
+  </ItemGroup>
+
+</Project>

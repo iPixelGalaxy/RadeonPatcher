@@ -1,0 +1,34 @@
+## Build output
+bin/
+obj/
+publish/
+artifacts/
+
+## Visual Studio / Rider / VS Code
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+## .NET
+TestResults/
+*.nupkg
+*.snupkg
+project.lock.json
+project.assets.json
+*.nuget.props
+*.nuget.targets
+
+## Logs and diagnostics
+*.log
+*.tlog
+*.binlog
+*.pdb
+
+## OS files
+Thumbs.db
+Desktop.ini
+.DS_Store
