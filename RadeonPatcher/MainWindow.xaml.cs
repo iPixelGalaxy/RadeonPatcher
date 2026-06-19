@@ -42,7 +42,7 @@ public partial class MainWindow : Window
             DisplayDriverText.Text = _hardware.DisplayDriverPackageVersion is null
                 ? _hardware.DisplayDriverVersion is null
                     ? "Installed Video Driver: None"
-                    : $"Installed Video Driver: Unknown (Windows driver {_hardware.DisplayDriverVersion})"
+                    : "Installed Video Driver: Unknown"
                 : $"Installed Video Driver: {_hardware.DisplayDriverPackageVersion}";
             OsText.Text = $"{_hardware.OsName} ({_hardware.OsVersion})";
             AudioText.Text = _hardware.AudioDriverVersion is null
