@@ -39,6 +39,7 @@ public sealed record InstallRequest(
     bool InstallDisplayDriver,
     bool EnableServerCompatibility,
     bool InstallAdrenalin,
+    bool ReplaceAdrenalin,
     bool InstallBundledAudio);
 
 public sealed record UpdateCheckResult(
@@ -226,7 +227,7 @@ public sealed class DriverWorkflow : IDisposable
             }
             if (request.InstallAdrenalin)
             {
-                await InstallAdrenalinAsync(packageRoot, log);
+                await InstallAdrenalinAsync(packageRoot, request.ReplaceAdrenalin, log);
             }
         }
 
@@ -251,47 +252,47 @@ public sealed class DriverWorkflow : IDisposable
 
     public async Task RemoveAdrenalinAsync(Action<string> log)
     {
+        var uninstall = FindAdrenalinUninstallCommand();
+        if (uninstall is null)
+        {
+            throw new InvalidOperationException("AMD Software: Adrenalin Edition uninstall command was not found.");
+        }
+
+        log("Removing AMD Software: Adrenalin Edition.");
+        await RunProcessAsync(uninstall.Value.FileName, uninstall.Value.Arguments, log);
+        log("AMD Software: Adrenalin Edition removed.");
+    }
+
+    private static (string FileName, string Arguments)? FindAdrenalinUninstallCommand()
+    {
         const string uninstallRoot = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
-        string? uninstallCommand = null;
+        (string FileName, string Arguments)? fallback = null;
         foreach (var root in new[] { uninstallRoot, @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall" })
         {
             using var key = Registry.LocalMachine.OpenSubKey(root);
-            if (key is null)
-            {
-                continue;
-            }
+            if (key is null) continue;
 
             foreach (var subKeyName in key.GetSubKeyNames())
             {
                 using var subKey = key.OpenSubKey(subKeyName);
                 var displayName = subKey?.GetValue("DisplayName") as string;
-                if (displayName is not null && Regex.IsMatch(displayName, @"^(AMD Software|AMD Settings)(?:: Adrenalin Edition)?$", RegexOptions.IgnoreCase))
+                if (displayName is null || !Regex.IsMatch(displayName, @"^(AMD Software|AMD Settings)(?:: Adrenalin Edition)?$", RegexOptions.IgnoreCase)) continue;
+
+                if (subKey?.GetValue("WindowsInstaller") is 1 && Regex.IsMatch(subKeyName, @"^\{[0-9A-F-]+\}$", RegexOptions.IgnoreCase))
                 {
-                    uninstallCommand = subKey?.GetValue("UninstallString") as string;
-                    break;
+                    return ("msiexec.exe", $"/x {subKeyName} /qn /norestart");
+                }
+
+                var uninstallCommand = subKey?.GetValue("UninstallString") as string;
+                var match = Regex.Match(uninstallCommand?.Trim() ?? "", "^\\\"(?<file>[^\\\"]+)\\\"\\s*(?<args>.*)$|^(?<file>.+?\\.exe)(?:\\s+(?<args>.*))?$", RegexOptions.IgnoreCase);
+                if (match.Success)
+                {
+                    fallback ??= (match.Groups["file"].Value, match.Groups["args"].Value);
                 }
             }
-
-            if (!string.IsNullOrWhiteSpace(uninstallCommand))
-            {
-                break;
-            }
         }
 
-        if (string.IsNullOrWhiteSpace(uninstallCommand))
-        {
-            throw new InvalidOperationException("AMD Software: Adrenalin Edition uninstall command was not found.");
-        }
-
-        var match = Regex.Match(uninstallCommand.Trim(), "^\\\"(?<file>[^\\\"]+)\\\"\\s*(?<args>.*)$|^(?<file>.+?\\.exe)(?:\\s+(?<args>.*))?$", RegexOptions.IgnoreCase);
-        if (!match.Success)
-        {
-            throw new InvalidOperationException("AMD Software: Adrenalin Edition uninstall command is invalid.");
-        }
-
-        log("Removing AMD Software: Adrenalin Edition.");
-        await RunProcessAsync(match.Groups["file"].Value, match.Groups["args"].Value, log);
-        log("AMD Software: Adrenalin Edition removed.");
+        return fallback;
     }
 
     public Task<string> SetMpoOverrideAsync(bool disable, Action<string> log)
@@ -502,8 +503,14 @@ public sealed class DriverWorkflow : IDisposable
         await RunProcessAsync("pnputil.exe", $"/add-driver \"{inf}\" /install", log, allowNoUpdate: true);
     }
 
-    private async Task InstallAdrenalinAsync(string packageRoot, Action<string> log)
+    private async Task InstallAdrenalinAsync(string packageRoot, bool replaceExisting, Action<string> log)
     {
+        if (replaceExisting && FindAdrenalinUninstallCommand() is not null)
+        {
+            log("Removing existing AMD Software before installing the selected driver version.");
+            await RemoveAdrenalinAsync(log);
+        }
+
         var installer = Directory.EnumerateFiles(packageRoot, "ccc2_install.exe", SearchOption.AllDirectories)
             .OrderByDescending(p => p.Length)
             .FirstOrDefault();

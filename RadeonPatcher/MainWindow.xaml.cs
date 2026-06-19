@@ -146,6 +146,7 @@ public partial class MainWindow : Window
                 InstallDisplayDriverCheck.IsChecked == true,
                 hardware.IsServer,
                 AdrenalinCheck.IsChecked == true,
+                IsSelectedDriverDifferentFromCurrent(),
                 AudioCheck.IsChecked == true);
 
             await _workflow.InstallAsync(request, Log);
@@ -234,6 +235,15 @@ public partial class MainWindow : Window
     private void UpdateMpoButtonText() => ToggleMpoButtonText.Text = _hardware?.IsMpoDisabled == true
         ? "Turn MPO On"
         : "Turn MPO Off";
+
+    private bool IsSelectedDriverDifferentFromCurrent()
+    {
+        var selectedVersion = (DriverCombo.SelectedItem as DriverRelease)?.VersionText;
+        var currentVersion = _hardware?.DisplayDriverPackageVersion;
+        return Version.TryParse(selectedVersion, out var selected) &&
+            Version.TryParse(currentVersion, out var current) &&
+            selected != current;
+    }
 
     private void UpdateAdrenalinControl()
     {
