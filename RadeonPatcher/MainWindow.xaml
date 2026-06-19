@@ -460,8 +460,8 @@
 
         <DockPanel Grid.Row="3" Margin="0,14,0,0" LastChildFill="False">
             <ProgressBar x:Name="Progress" DockPanel.Dock="Left" Width="280" Height="20" IsIndeterminate="False" Visibility="Hidden"/>
-            <Button x:Name="ToggleMpoButton" DockPanel.Dock="Right" Width="110" Height="38" Margin="0,0,10,0" Content="Toggle MPO" Click="ToggleMpoButton_Click"/>
             <Button x:Name="InstallButton" DockPanel.Dock="Right" Width="180" Height="38" Content="Install" Click="InstallButton_Click"/>
+            <Button x:Name="ToggleMpoButton" DockPanel.Dock="Right" Width="180" Height="38" Margin="0,0,10,0" Content="Toggle MPO" Click="ToggleMpoButton_Click"/>
         </DockPanel>
     </Grid>
 </Window>

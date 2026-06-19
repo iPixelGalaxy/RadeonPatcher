@@ -55,7 +55,10 @@ public partial class MainWindow : Window
             ServerCompatCheck.IsChecked = _hardware.IsServer;
             AudioCheck.IsChecked = _hardware.AudioDriverVersion is null || Version.Parse(_hardware.AudioDriverVersion) < Version.Parse("10.0.1.42");
             UpdateCheckServiceCheck.IsChecked = false;
-            UpdateCheckServiceCheck.IsEnabled = !_hardware.IsUpdateCheckServiceInstalled;
+            UpdateCheckServiceCheck.IsEnabled = true;
+            UpdateCheckServiceCheck.Content = _hardware.IsUpdateCheckServiceInstalled
+                ? "Uninstall Update Check Service"
+                : "Install Update Check Service";
             AdrenalinCheck.Content = _hardware.IsAdrenalinInstalled
                 ? "Reinstall AMD Software: Adrenalin Edition"
                 : "Install AMD Software: Adrenalin Edition";
@@ -123,18 +126,26 @@ public partial class MainWindow : Window
     {
         await Busy(async () =>
         {
+            var hardware = _hardware ?? await _workflow.GetHardwareInfoAsync();
             var request = new InstallRequest(
-                _hardware ?? await _workflow.GetHardwareInfoAsync(),
+                hardware,
                 DriverCombo.SelectedItem as DriverRelease,
                 SupportUrlBox.Text.Trim(),
                 InstallDisplayDriverCheck.IsChecked == true,
                 ServerCompatCheck.IsChecked == true,
                 AdrenalinCheck.IsChecked == true,
                 AudioCheck.IsChecked == true,
-                UpdateCheckServiceCheck.IsChecked == true,
+                !hardware.IsUpdateCheckServiceInstalled && UpdateCheckServiceCheck.IsChecked == true,
+                hardware.IsUpdateCheckServiceInstalled && UpdateCheckServiceCheck.IsChecked == true,
                 ForceDownloadCheck.IsChecked == true);
 
             await _workflow.InstallAsync(request, Log);
+            if (UpdateCheckServiceCheck.IsChecked == true && hardware.IsUpdateCheckServiceInstalled)
+            {
+                _hardware = hardware with { IsUpdateCheckServiceInstalled = false };
+                UpdateCheckServiceCheck.IsChecked = false;
+                UpdateCheckServiceCheck.Content = "Install Update Check Service";
+            }
             Log("Install workflow finished.");
         });
     }

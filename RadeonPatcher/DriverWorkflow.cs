@@ -41,6 +41,7 @@ public sealed record InstallRequest(
     bool InstallAdrenalin,
     bool InstallBundledAudio,
     bool InstallUpdateCheckService,
+    bool UninstallUpdateCheckService,
     bool ForceDownload);
 
 public sealed record UpdateCheckResult(
@@ -241,6 +242,11 @@ public sealed class DriverWorkflow : IDisposable
         {
             await InstallUpdateCheckServiceAsync(log);
         }
+
+        if (request.UninstallUpdateCheckService)
+        {
+            await UninstallUpdateCheckServiceAsync(log);
+        }
     }
 
     public Task<string> SetMpoOverrideAsync(bool disable, Action<string> log)
@@ -300,6 +306,20 @@ public sealed class DriverWorkflow : IDisposable
         log("Installing update check scheduled task.");
         await RunPowerShellAsync(script);
         log("Update check service installed. It will run at Windows boot and once every 24 hours.");
+    }
+
+    private async Task UninstallUpdateCheckServiceAsync(Action<string> log)
+    {
+        const string taskName = "RadeonPatcher Update Check";
+        log("Removing update check service.");
+        await RunPowerShellAsync($"Unregister-ScheduledTask -TaskName '{taskName}' -Confirm:$false -ErrorAction SilentlyContinue");
+        var serviceExe = Path.Combine(WorkRoot, "RadeonPatcherUpdateCheck.exe");
+        if (File.Exists(serviceExe))
+        {
+            File.Delete(serviceExe);
+        }
+
+        log("Update check service removed.");
     }
 
     private async Task<string> DownloadDriverAsync(DriverRelease driver, bool force, Action<string> log)
