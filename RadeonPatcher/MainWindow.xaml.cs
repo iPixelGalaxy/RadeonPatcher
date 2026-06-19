@@ -136,6 +136,7 @@ public partial class MainWindow : Window
 
     private async void InstallButton_Click(object sender, RoutedEventArgs e)
     {
+        var installed = false;
         await Busy(async () =>
         {
             var hardware = _hardware ?? await _workflow.GetHardwareInfoAsync();
@@ -151,7 +152,13 @@ public partial class MainWindow : Window
 
             await _workflow.InstallAsync(request, Log);
             Log("Install workflow finished.");
+            installed = true;
         });
+
+        if (installed)
+        {
+            await RefreshAsync();
+        }
     }
 
     private async void UpdateCheckServiceButton_Click(object sender, RoutedEventArgs e)
