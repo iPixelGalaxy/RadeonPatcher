@@ -150,7 +150,7 @@ public partial class MainWindow : Window
                 InstallDisplayDriverCheck.IsChecked == true,
                 hardware.IsServer,
                 AdrenalinCheck.IsChecked == true,
-                IsSelectedDriverDifferentFromCurrent(),
+                hardware.IsAdrenalinInstalled && IsSelectedDriverDifferentFromCurrent(),
                 AudioCheck.IsChecked == true);
 
             await _workflow.InstallAsync(request, Log);
@@ -261,8 +261,9 @@ public partial class MainWindow : Window
         var selectedVersion = (DriverCombo.SelectedItem as DriverRelease)?.VersionText;
         var action = "Install";
         var forceInstall = false;
+        var adrenalinInstalled = _hardware?.IsAdrenalinInstalled == true;
 
-        if (Version.TryParse(selectedVersion, out var selected) && Version.TryParse(currentVersion, out var current))
+        if (adrenalinInstalled && Version.TryParse(selectedVersion, out var selected) && Version.TryParse(currentVersion, out var current))
         {
             if (selected > current)
             {
@@ -274,12 +275,12 @@ public partial class MainWindow : Window
                 action = "Downgrade";
                 forceInstall = true;
             }
-            else if (_hardware?.IsAdrenalinInstalled == true)
+            else
             {
                 action = "Reinstall";
             }
         }
-        else if (_hardware?.IsAdrenalinInstalled == true)
+        else if (adrenalinInstalled)
         {
             action = "Reinstall";
         }
