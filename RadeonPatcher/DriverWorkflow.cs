@@ -108,7 +108,11 @@ public sealed class DriverWorkflow : IDisposable
             $packageVersion = $null
             if ($drv) {
               $graphicsUpdate = Get-ItemProperty 'HKLM:\SOFTWARE\AMD\AMDInstallManager\CheckForUpdates\GraphicsDriverConsumer' -ErrorAction SilentlyContinue
-              if ($graphicsUpdate.VersionCurrentlyInstalled -match '^\d+\.\d+\.\d+$') {
+              $activeBuild = [regex]::Match([string]$gpu.Service, 'amduw\d+g-(?<build>\d+)-').Groups['build'].Value
+              $registryBuild = [regex]::Match([string]$graphicsUpdate.InternalVersion, '-(?<build>\d+)C-').Groups['build'].Value
+              if ($activeBuild -and $activeBuild -eq $registryBuild -and $graphicsUpdate.Version -match '^\d+\.\d+\.\d+$') {
+                $packageVersion = $graphicsUpdate.Version
+              } elseif ($graphicsUpdate.VersionCurrentlyInstalled -match '^\d+\.\d+\.\d+$') {
                 $packageVersion = $graphicsUpdate.VersionCurrentlyInstalled
               }
             }
