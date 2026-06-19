@@ -15,6 +15,7 @@ public sealed record HardwareInfo(
     string? GpuName,
     string? GpuInstanceId,
     string? DisplayDriverVersion,
+    string? DisplayDriverOriginalInf,
     string? DisplayDriverPackageVersion,
     string? AudioDriverVersion,
     string OsName,
@@ -105,47 +106,17 @@ public sealed class DriverWorkflow : IDisposable
             $adrenalinInstalled = $null -ne (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
               Where-Object { $_.DisplayName -match '^(AMD Software|AMD Settings)(?:: Adrenalin Edition)?$' } |
               Select-Object -First 1)
-            $packageVersion = $null
-            if ($drv) {
-              $graphicsUpdate = Get-ItemProperty 'HKLM:\SOFTWARE\AMD\AMDInstallManager\CheckForUpdates\GraphicsDriverConsumer' -ErrorAction SilentlyContinue
-              $activeBuild = [regex]::Match([string]$gpu.Service, 'amduw\d+g-(?<build>\d+)-').Groups['build'].Value
-              $registryBuild = [regex]::Match([string]$graphicsUpdate.InternalVersion, '-(?<build>\d+)C-').Groups['build'].Value
-              if ($activeBuild -and $activeBuild -eq $registryBuild -and $graphicsUpdate.Version -match '^\d+\.\d+\.\d+$') {
-                $packageVersion = $graphicsUpdate.Version
-              } elseif ($graphicsUpdate.VersionCurrentlyInstalled -match '^\d+\.\d+\.\d+$') {
-                $packageVersion = $graphicsUpdate.VersionCurrentlyInstalled
-              }
-            }
-            foreach ($manifest in @('C:\AMD\AMD-Software-Installer\Config\InstallManifest.json','C:\AMD\AMD-Software-Installer\Bin64\InstallManifest.json')) {
-              if ($packageVersion) { break }
-              if (Test-Path -LiteralPath $manifest) {
-                try {
-                  $json = Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json
-                  $packageVersion = $json.BuildInfo.RadeonSoftwareVersion
-                  if (-not $packageVersion) { $packageVersion = $json.BuildInfo.ExternalVersion }
-                  if ($packageVersion) { break }
-                } catch {}
-              }
-            }
-            if (-not $packageVersion) {
-              $latestLog = Get-ChildItem 'C:\Program Files\AMD\CIM\Log','C:\Program Files\AMD\AMDInstallManager\Logs' -Filter '*.log' -File -ErrorAction SilentlyContinue |
-                Sort-Object LastWriteTime -Descending |
-                Select-Object -First 20
-              foreach ($log in $latestLog) {
-                try {
-                  $text = Get-Content -LiteralPath $log.FullName -Raw -ErrorAction Stop
-                  if ($text -match 'driver Version\s+(\d+\.\d+\.\d+)\s+-') {
-                    $packageVersion = $Matches[1]
-                    break
-                  }
-                } catch {}
-              }
+            $originalInf = $null
+            if ($gpu.Service) {
+              $service = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\$($gpu.Service)" -ErrorAction SilentlyContinue
+              $match = [regex]::Match([string]$service.ImagePath, '\\(?<inf>[^\\]+\.inf)_amd64_', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+              if ($match.Success) { $originalInf = $match.Groups['inf'].Value }
             }
             [pscustomobject]@{
               GpuName=$gpu.Name
               GpuInstanceId=$gpu.PNPDeviceID
               DisplayDriverVersion=$drv.DriverVersion
-              DisplayDriverPackageVersion=$packageVersion
+              DisplayDriverOriginalInf=$originalInf
               AudioDriverVersion=$aud.DriverVersion
               OsName=$osName
               OsVersion=$osBuild
@@ -155,7 +126,8 @@ public sealed class DriverWorkflow : IDisposable
               IsAdrenalinInstalled=$adrenalinInstalled
             } | ConvertTo-Json -Compress
             """);
-        return SimpleJson.ParseHardware(display.Trim());
+        var hardware = SimpleJson.ParseHardware(display.Trim());
+        return hardware with { DisplayDriverPackageVersion = ResolvePackageVersion(hardware) };
     }
 
     public string? ResolveSupportUrl(HardwareInfo hardware)
@@ -421,6 +393,7 @@ public sealed class DriverWorkflow : IDisposable
         {
             log($"Installing display driver INF: {displayInf}");
             await StageAndForceInstallDisplayDriverAsync(displayInf, request.Hardware.GpuInstanceId, log);
+            RecordInstalledDriver(request, displayInf, log);
             return;
         }
 
@@ -430,6 +403,7 @@ public sealed class DriverWorkflow : IDisposable
         await SignPackageAsync(patchDirectory, patchedInf, log);
         log($"Installing patched display driver INF: {patchedInf}");
         await StageAndForceInstallDisplayDriverAsync(patchedInf, request.Hardware.GpuInstanceId, log);
+        RecordInstalledDriver(request, patchedInf, log);
     }
 
     private static async Task StageAndForceInstallDisplayDriverAsync(string infPath, string? instanceId, Action<string> log)
@@ -485,6 +459,69 @@ public sealed class DriverWorkflow : IDisposable
             """);
         var match = Regex.Match(output, @"\boem\d+\.inf\b", RegexOptions.IgnoreCase);
         return match.Success ? match.Value : null;
+    }
+
+    private string? ResolvePackageVersion(HardwareInfo hardware)
+    {
+        if (string.IsNullOrWhiteSpace(hardware.GpuInstanceId) || string.IsNullOrWhiteSpace(hardware.DisplayDriverOriginalInf))
+        {
+            return null;
+        }
+
+        var receipt = DriverInstallReceiptStore.Load()
+            .OrderByDescending(x => x.InstalledAt)
+            .FirstOrDefault(x =>
+                string.Equals(x.GpuInstanceId, hardware.GpuInstanceId, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(x.OriginalInf, hardware.DisplayDriverOriginalInf, StringComparison.OrdinalIgnoreCase));
+        if (receipt is not null)
+        {
+            return receipt.PackageVersion;
+        }
+
+        try
+        {
+            foreach (var infPath in Directory.EnumerateFiles(ExtractedRoot, hardware.DisplayDriverOriginalInf, SearchOption.AllDirectories))
+            {
+                var relativePath = Path.GetRelativePath(ExtractedRoot, infPath);
+                var packageFolder = relativePath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0];
+                var version = Regex.Match(packageFolder, @"\b(?<version>\d+\.\d+\.\d+)-win(?:10|11)\b", RegexOptions.IgnoreCase).Groups["version"].Value;
+                if (!string.IsNullOrWhiteSpace(version))
+                {
+                    return version;
+                }
+            }
+        }
+        catch (IOException)
+        {
+            // Cache cleanup must not prevent hardware detection.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Cache access can be restricted for a non-elevated update check.
+        }
+
+        return null;
+    }
+
+    private static void RecordInstalledDriver(InstallRequest request, string infPath, Action<string> log)
+    {
+        if (request.Driver is null || string.IsNullOrWhiteSpace(request.Hardware.GpuInstanceId))
+        {
+            return;
+        }
+
+        var originalInf = Path.GetFileName(infPath);
+        if (string.IsNullOrWhiteSpace(originalInf))
+        {
+            return;
+        }
+
+        DriverInstallReceiptStore.Save(new DriverInstallReceipt(
+            request.Hardware.GpuInstanceId,
+            originalInf,
+            request.Driver.VersionText,
+            DateTimeOffset.UtcNow));
+        log($"Recorded installed AMD package version: {request.Driver.VersionText}.");
     }
 
     private async Task InstallBundledAudioAsync(bool serverCompatibility, Action<string> log)
@@ -967,6 +1004,7 @@ internal static class SimpleJson
             Value(json, "GpuName"),
             Value(json, "GpuInstanceId"),
             Value(json, "DisplayDriverVersion"),
+            Value(json, "DisplayDriverOriginalInf"),
             Value(json, "DisplayDriverPackageVersion"),
             Value(json, "AudioDriverVersion"),
             Value(json, "OsName") ?? "Windows",

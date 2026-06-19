@@ -40,7 +40,7 @@ public partial class MainWindow : Window
 
             GpuText.Text = _hardware.GpuName ?? "No AMD display adapter detected.";
             DisplayDriverText.Text = _hardware.DisplayDriverPackageVersion is null
-                ? $"Current Driver: {_hardware.DisplayDriverVersion ?? "unknown"}"
+                ? $"Current Driver: Unknown (Windows driver {_hardware.DisplayDriverVersion ?? "unknown"})"
                 : $"Current Driver: {_hardware.DisplayDriverPackageVersion}";
             OsText.Text = $"{_hardware.OsName} ({_hardware.OsVersion})";
             AudioText.Text = _hardware.AudioDriverVersion is null
