@@ -16,6 +16,7 @@ public partial class MainWindow : Window
     private HardwareInfo? _hardware;
     private AppThemeMode _themeMode = AppThemeMode.System;
     private bool _applyingSettings;
+    private bool _updatingOptions;
 
     public MainWindow()
     {
@@ -67,9 +68,7 @@ public partial class MainWindow : Window
             UpdateCheckServiceButtonText.Text = _hardware.IsUpdateCheckServiceInstalled
                 ? "Uninstall Update Check Service"
                 : "Install Update Check Service";
-            AdrenalinCheck.Content = _hardware.IsAdrenalinInstalled
-                ? "Reinstall AMD Software: Adrenalin Edition"
-                : "Install AMD Software: Adrenalin Edition";
+            RemoveAdrenalinButton.Visibility = _hardware.IsAdrenalinInstalled ? Visibility.Visible : Visibility.Collapsed;
             UpdateMpoButtonText();
             UpdateSelectedDriverText();
             Log("Ready.");
@@ -167,6 +166,21 @@ public partial class MainWindow : Window
         });
     }
 
+    private async void RemoveAdrenalinButton_Click(object sender, RoutedEventArgs e)
+    {
+        await Busy(async () =>
+        {
+            await _workflow.RemoveAdrenalinAsync(Log);
+            if (_hardware is not null)
+            {
+                _hardware = _hardware with { IsAdrenalinInstalled = false };
+            }
+
+            RemoveAdrenalinButton.Visibility = Visibility.Collapsed;
+            UpdateAdrenalinControl();
+        });
+    }
+
     private async void ToggleMpoButton_Click(object sender, RoutedEventArgs e)
     {
         var disable = _hardware?.IsMpoDisabled != true;
@@ -191,6 +205,7 @@ public partial class MainWindow : Window
         {
             SelectedDriverText.Text = "";
             InstallDisplayDriverCheck.Content = "Install GPU Driver";
+            UpdateAdrenalinControl();
             return;
         }
 
@@ -208,15 +223,53 @@ public partial class MainWindow : Window
                 : selected < current
                     ? "Downgrade GPU Driver"
                     : "Reinstall GPU Driver";
+            UpdateAdrenalinControl();
             return;
         }
 
         InstallDisplayDriverCheck.Content = "Install GPU Driver";
+        UpdateAdrenalinControl();
     }
 
     private void UpdateMpoButtonText() => ToggleMpoButtonText.Text = _hardware?.IsMpoDisabled == true
         ? "Turn MPO On"
         : "Turn MPO Off";
+
+    private void UpdateAdrenalinControl()
+    {
+        var currentVersion = _hardware?.DisplayDriverPackageVersion;
+        var selectedVersion = (DriverCombo.SelectedItem as DriverRelease)?.VersionText;
+        var action = "Install";
+        var forceInstall = false;
+
+        if (Version.TryParse(selectedVersion, out var selected) && Version.TryParse(currentVersion, out var current))
+        {
+            if (selected > current)
+            {
+                action = "Update";
+                forceInstall = true;
+            }
+            else if (selected < current)
+            {
+                action = "Downgrade";
+                forceInstall = true;
+            }
+            else if (_hardware?.IsAdrenalinInstalled == true)
+            {
+                action = "Reinstall";
+            }
+        }
+        else if (_hardware?.IsAdrenalinInstalled == true)
+        {
+            action = "Reinstall";
+        }
+
+        _updatingOptions = true;
+        AdrenalinCheck.Content = $"{action} AMD Software: Adrenalin Edition";
+        AdrenalinCheck.IsChecked = forceInstall || _settings.InstallAdrenalin;
+        AdrenalinCheck.IsEnabled = !forceInstall;
+        _updatingOptions = false;
+    }
 
     private void ApplySavedSettings()
     {
@@ -235,7 +288,7 @@ public partial class MainWindow : Window
 
     private void SaveSettings()
     {
-        if (_applyingSettings)
+        if (_applyingSettings || _updatingOptions)
         {
             return;
         }
@@ -274,6 +327,7 @@ public partial class MainWindow : Window
         InstallButton.IsEnabled = !busy;
         ToggleMpoButton.IsEnabled = !busy;
         UpdateCheckServiceButton.IsEnabled = !busy;
+        RemoveAdrenalinButton.IsEnabled = !busy;
         InstallOptionsPanel.Visibility = busy ? Visibility.Hidden : Visibility.Visible;
     }
 

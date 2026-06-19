@@ -458,8 +458,9 @@
         </Grid>
 
         <DockPanel Grid.Row="3" Margin="0,14,0,0" LastChildFill="False">
-            <ProgressBar x:Name="Progress" DockPanel.Dock="Left" Width="280" Height="20" IsIndeterminate="False" Visibility="Hidden"/>
+            <ProgressBar x:Name="Progress" DockPanel.Dock="Left" Width="120" Height="20" IsIndeterminate="False" Visibility="Hidden"/>
             <Button x:Name="InstallButton" DockPanel.Dock="Right" Width="135" Height="38" Content="Install" Click="InstallButton_Click"/>
+            <Button x:Name="RemoveAdrenalinButton" DockPanel.Dock="Right" Width="190" Height="38" Margin="0,0,10,0" Content="Remove AMD Software" Click="RemoveAdrenalinButton_Click" Visibility="Collapsed"/>
             <Button x:Name="ToggleMpoButton" DockPanel.Dock="Right" Width="135" Height="38" Margin="0,0,10,0" Click="ToggleMpoButton_Click" ToolTip="Enables or removes the MPO registry override. Restart or sign out/in after changing it.">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                     <TextBlock x:Name="ToggleMpoButtonText" Text="Turn MPO Off"/>

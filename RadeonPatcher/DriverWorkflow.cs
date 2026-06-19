@@ -249,6 +249,51 @@ public sealed class DriverWorkflow : IDisposable
         return true;
     }
 
+    public async Task RemoveAdrenalinAsync(Action<string> log)
+    {
+        const string uninstallRoot = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
+        string? uninstallCommand = null;
+        foreach (var root in new[] { uninstallRoot, @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall" })
+        {
+            using var key = Registry.LocalMachine.OpenSubKey(root);
+            if (key is null)
+            {
+                continue;
+            }
+
+            foreach (var subKeyName in key.GetSubKeyNames())
+            {
+                using var subKey = key.OpenSubKey(subKeyName);
+                var displayName = subKey?.GetValue("DisplayName") as string;
+                if (displayName is not null && Regex.IsMatch(displayName, @"^(AMD Software|AMD Settings)(?:: Adrenalin Edition)?$", RegexOptions.IgnoreCase))
+                {
+                    uninstallCommand = subKey?.GetValue("UninstallString") as string;
+                    break;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(uninstallCommand))
+            {
+                break;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(uninstallCommand))
+        {
+            throw new InvalidOperationException("AMD Software: Adrenalin Edition uninstall command was not found.");
+        }
+
+        var match = Regex.Match(uninstallCommand.Trim(), "^\\\"(?<file>[^\\\"]+)\\\"\\s*(?<args>.*)$|^(?<file>.+?\\.exe)(?:\\s+(?<args>.*))?$", RegexOptions.IgnoreCase);
+        if (!match.Success)
+        {
+            throw new InvalidOperationException("AMD Software: Adrenalin Edition uninstall command is invalid.");
+        }
+
+        log("Removing AMD Software: Adrenalin Edition.");
+        await RunProcessAsync(match.Groups["file"].Value, match.Groups["args"].Value, log);
+        log("AMD Software: Adrenalin Edition removed.");
+    }
+
     public Task<string> SetMpoOverrideAsync(bool disable, Action<string> log)
     {
         SetMpoState(disable);
