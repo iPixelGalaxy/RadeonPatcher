@@ -87,7 +87,6 @@ public partial class MainWindow : Window
             UpdateCheckServiceButtonText.Text = _hardware.IsUpdateCheckServiceInstalled
                 ? "Uninstall Update Check Service"
                 : "Install Update Check Service";
-            RemoveAdrenalinButton.Visibility = _hardware.IsAdrenalinInstalled ? Visibility.Visible : Visibility.Collapsed;
             UpdateMpoButtonText();
             UpdateSelectedDriverText();
             Log("Ready.");
@@ -199,21 +198,6 @@ public partial class MainWindow : Window
         await Busy(() => _workflow.ClearDownloadCacheAsync(Log));
         _hasDownloadCache = false;
         SetBusy(false);
-    }
-
-    private async void RemoveAdrenalinButton_Click(object sender, RoutedEventArgs e)
-    {
-        await Busy(async () =>
-        {
-            await _workflow.RemoveAdrenalinAsync(Log);
-            if (_hardware is not null)
-            {
-                _hardware = _hardware with { IsAdrenalinInstalled = false };
-            }
-
-            RemoveAdrenalinButton.Visibility = Visibility.Collapsed;
-            UpdateAdrenalinControl();
-        });
     }
 
     private async void UninstallGpuDriverButton_Click(object sender, RoutedEventArgs e)
@@ -440,7 +424,6 @@ public partial class MainWindow : Window
         InstallButton.IsEnabled = !busy;
         ToggleMpoButton.IsEnabled = !busy;
         UpdateCheckServiceButton.IsEnabled = !busy;
-        RemoveAdrenalinButton.IsEnabled = !busy;
         UninstallGpuDriverButton.IsEnabled = !busy && _canUninstallGpuDriver;
         UninstallAudioDriverButton.IsEnabled = !busy && _canUninstallAudioDriver;
         UninstallAdrenalinButton.IsEnabled = !busy && _canUninstallAdrenalin;

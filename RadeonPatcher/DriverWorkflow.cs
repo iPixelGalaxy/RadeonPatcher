@@ -60,7 +60,6 @@ public sealed class DriverWorkflow : IDisposable
 
     public string WorkRoot { get; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "RadeonPatcher");
     private string ToolsRoot => Path.Combine(WorkRoot, "tools");
-    private string UpdateCheckerRoot => Path.Combine(WorkRoot, "update-checker");
     private string AudioPayloadRoot => Path.Combine(WorkRoot, "bundled-audio");
     private string DownloadsRoot => Path.Combine(WorkRoot, "downloads");
     private string ExtractedRoot => Path.Combine(WorkRoot, "extracted");
@@ -75,7 +74,6 @@ public sealed class DriverWorkflow : IDisposable
     public async Task EnsurePayloadsAsync()
     {
         Directory.CreateDirectory(ToolsRoot);
-        Directory.CreateDirectory(UpdateCheckerRoot);
         Directory.CreateDirectory(AudioPayloadRoot);
         Directory.CreateDirectory(DownloadsRoot);
         Directory.CreateDirectory(ExtractedRoot);
@@ -83,7 +81,11 @@ public sealed class DriverWorkflow : IDisposable
 
         await ExtractEmbeddedFolderAsync("Tools\\", ToolsRoot);
         await ExtractEmbeddedFolderAsync("BundledAudio\\", AudioPayloadRoot);
-        await ExtractEmbeddedFolderAsync("UpdateChecker\\", UpdateCheckerRoot);
+        var legacyUpdateCheckerRoot = Path.Combine(WorkRoot, "update-checker");
+        if (Directory.Exists(legacyUpdateCheckerRoot))
+        {
+            Directory.Delete(legacyUpdateCheckerRoot, true);
+        }
     }
 
     public async Task<HardwareInfo> GetHardwareInfoAsync()
@@ -271,13 +273,7 @@ public sealed class DriverWorkflow : IDisposable
 
     public async Task EnsureUpdateCheckServiceCurrentAsync(Action<string> log)
     {
-        var helperExe = Path.Combine(UpdateCheckerRoot, "RadeonPatcherUpdateCheck.exe");
         var serviceExe = Path.Combine(WorkRoot, "RadeonPatcherUpdateCheck.exe");
-        if (!File.Exists(helperExe))
-        {
-            return;
-        }
-
         byte[] current = [];
         if (File.Exists(serviceExe))
         {
@@ -285,7 +281,9 @@ public sealed class DriverWorkflow : IDisposable
             current = SHA256.HashData(currentStream);
         }
 
-        using var expectedStream = File.OpenRead(helperExe);
+        await using var expectedStream = Assembly.GetExecutingAssembly()
+            .GetManifestResourceStream("UpdateChecker\\RadeonPatcherUpdateCheck.exe")
+            ?? throw new InvalidOperationException("Embedded update checker is missing.");
         var expected = SHA256.HashData(expectedStream);
         if (current.AsSpan().SequenceEqual(expected))
         {
@@ -293,6 +291,7 @@ public sealed class DriverWorkflow : IDisposable
         }
 
         log("Updating installed update checker helper.");
+        await UninstallUpdateCheckServiceAsync(log);
         await InstallUpdateCheckServiceAsync(log);
     }
 
@@ -520,12 +519,7 @@ public sealed class DriverWorkflow : IDisposable
         Directory.CreateDirectory(WorkRoot);
         var processPath = Environment.ProcessPath ?? throw new InvalidOperationException("Could not determine the current executable path.");
         var serviceExe = Path.Combine(WorkRoot, "RadeonPatcherUpdateCheck.exe");
-        var helperExe = Path.Combine(UpdateCheckerRoot, "RadeonPatcherUpdateCheck.exe");
-        if (!File.Exists(helperExe))
-        {
-            throw new FileNotFoundException("Embedded update checker was not extracted.", helperExe);
-        }
-        File.Copy(helperExe, serviceExe, true);
+        await ExtractEmbeddedFolderAsync("UpdateChecker\\", WorkRoot);
 
         var startTime = DateTime.Now.AddMinutes(10).ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
         var script = $$"""
@@ -550,8 +544,15 @@ public sealed class DriverWorkflow : IDisposable
     {
         const string taskName = "RadeonPatcher Update Check";
         log("Removing update check service.");
-        await RunPowerShellAsync($"Unregister-ScheduledTask -TaskName '{taskName}' -Confirm:$false -ErrorAction SilentlyContinue");
         var serviceExe = Path.Combine(WorkRoot, "RadeonPatcherUpdateCheck.exe");
+        var escapedServiceExe = serviceExe.Replace("'", "''");
+        await RunPowerShellAsync($$"""
+            Stop-ScheduledTask -TaskName '{{taskName}}' -ErrorAction SilentlyContinue
+            Unregister-ScheduledTask -TaskName '{{taskName}}' -Confirm:$false -ErrorAction SilentlyContinue
+            Get-CimInstance Win32_Process -Filter "Name = 'RadeonPatcherUpdateCheck.exe'" -ErrorAction SilentlyContinue |
+              Where-Object { $_.ExecutablePath -eq '{{escapedServiceExe}}' } |
+              ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+            """);
         if (File.Exists(serviceExe))
         {
             File.Delete(serviceExe);
