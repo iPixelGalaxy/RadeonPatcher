@@ -19,6 +19,42 @@ public partial class App : System.Windows.Application
 
         MainWindow = new MainWindow();
         MainWindow.Show();
+        await CheckForAppUpdateAsync(MainWindow);
+    }
+
+    private static async Task CheckForAppUpdateAsync(Window owner)
+    {
+        AppUpdateInfo? update;
+        try
+        {
+            update = await AppUpdateService.CheckAsync();
+        }
+        catch
+        {
+            return;
+        }
+
+        if (update is null)
+        {
+            return;
+        }
+
+        var prompt = new AppUpdateWindow(update) { Owner = owner };
+        prompt.ShowDialog();
+        if (!prompt.UpdateRequested)
+        {
+            return;
+        }
+
+        try
+        {
+            await AppUpdateService.DownloadAndRestartAsync(update);
+            Current.Shutdown();
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(owner, $"RadeonPatcher could not install the update.\n\n{ex.Message}", "RadeonPatcher Update", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
 
     private static async Task RunUpdateCheckAsync()

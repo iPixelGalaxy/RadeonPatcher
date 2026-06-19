@@ -20,6 +20,7 @@
     <Description>Independent Radeon driver installer and compatibility patcher.</Description>
     <Authors>RadeonPatcher contributors</Authors>
     <Copyright>Copyright © RadeonPatcher contributors</Copyright>
+    <Version>1.0.0</Version>
     <UpdateCheckerPublishDir>$(BaseIntermediateOutputPath)update-checker\</UpdateCheckerPublishDir>
   </PropertyGroup>
 
