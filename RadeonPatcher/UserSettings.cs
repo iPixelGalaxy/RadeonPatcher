@@ -74,3 +74,35 @@ internal static class DriverInstallReceiptStore
         File.WriteAllText(FilePath, JsonSerializer.Serialize(receipts));
     }
 }
+
+public sealed record DriverPackageMap(string OriginalInf, string PackageVersion, DateTimeOffset RecordedAt);
+
+internal static class DriverPackageMapStore
+{
+    private static readonly string DirectoryPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RadeonPatcher");
+    private static readonly string FilePath = Path.Combine(DirectoryPath, "driver-package-map.json");
+
+    public static IReadOnlyList<DriverPackageMap> Load()
+    {
+        try
+        {
+            return File.Exists(FilePath)
+                ? JsonSerializer.Deserialize<List<DriverPackageMap>>(File.ReadAllText(FilePath)) ?? []
+                : [];
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    public static void Save(DriverPackageMap map)
+    {
+        var maps = Load()
+            .Where(x => !string.Equals(x.OriginalInf, map.OriginalInf, StringComparison.OrdinalIgnoreCase))
+            .Append(map)
+            .ToList();
+        Directory.CreateDirectory(DirectoryPath);
+        File.WriteAllText(FilePath, JsonSerializer.Serialize(maps));
+    }
+}

@@ -228,7 +228,8 @@ public sealed class DriverWorkflow : IDisposable
     private void ClearDownloadCache(Action<string> log)
     {
         log("Clearing downloaded driver cache.");
-        foreach (var directory in new[] { DownloadsRoot, ExtractedRoot })
+        CaptureCachedPackageMappings();
+        foreach (var directory in new[] { DownloadsRoot, ExtractedRoot, PatchedRoot })
         {
             if (!Directory.Exists(directory)) continue;
             foreach (var entry in Directory.EnumerateFileSystemEntries(directory))
@@ -621,6 +622,14 @@ public sealed class DriverWorkflow : IDisposable
             return receipt.PackageVersion;
         }
 
+        var packageMap = DriverPackageMapStore.Load()
+            .OrderByDescending(x => x.RecordedAt)
+            .FirstOrDefault(x => string.Equals(x.OriginalInf, hardware.DisplayDriverOriginalInf, StringComparison.OrdinalIgnoreCase));
+        if (packageMap is not null)
+        {
+            return packageMap.PackageVersion;
+        }
+
         try
         {
             foreach (var infPath in Directory.EnumerateFiles(ExtractedRoot, hardware.DisplayDriverOriginalInf, SearchOption.AllDirectories))
@@ -630,6 +639,7 @@ public sealed class DriverWorkflow : IDisposable
                 var version = Regex.Match(packageFolder, @"\b(?<version>\d+\.\d+\.\d+)-win(?:10|11)\b", RegexOptions.IgnoreCase).Groups["version"].Value;
                 if (!string.IsNullOrWhiteSpace(version))
                 {
+                    DriverPackageMapStore.Save(new DriverPackageMap(hardware.DisplayDriverOriginalInf, version, DateTimeOffset.UtcNow));
                     return version;
                 }
             }
@@ -664,11 +674,49 @@ public sealed class DriverWorkflow : IDisposable
             originalInf,
             request.Driver.VersionText,
             DateTimeOffset.UtcNow));
+        DriverPackageMapStore.Save(new DriverPackageMap(originalInf, request.Driver.VersionText, DateTimeOffset.UtcNow));
         log($"Recorded installed AMD package version: {request.Driver.VersionText}.");
+    }
+
+    private void CaptureCachedPackageMappings()
+    {
+        if (!Directory.Exists(ExtractedRoot))
+        {
+            return;
+        }
+
+        try
+        {
+            foreach (var infPath in Directory.EnumerateFiles(ExtractedRoot, "u*.inf", SearchOption.AllDirectories))
+            {
+                var relativePath = Path.GetRelativePath(ExtractedRoot, infPath);
+                var packageFolder = relativePath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0];
+                var version = Regex.Match(packageFolder, @"\b(?<version>\d+\.\d+\.\d+)-win(?:10|11)\b", RegexOptions.IgnoreCase).Groups["version"].Value;
+                if (!string.IsNullOrWhiteSpace(version))
+                {
+                    DriverPackageMapStore.Save(new DriverPackageMap(Path.GetFileName(infPath), version, DateTimeOffset.UtcNow));
+                }
+            }
+        }
+        catch (IOException)
+        {
+            // Cache cleanup can proceed without a complete map.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Cache cleanup can proceed without a complete map.
+        }
     }
 
     private async Task InstallBundledAudioAsync(bool serverCompatibility, Action<string> log)
     {
+        var currentHardware = await GetHardwareInfoAsync();
+        if (Version.TryParse(currentHardware.AudioDriverVersion, out var installedVersion) && installedVersion >= new Version(10, 0, 1, 42))
+        {
+            log("AMD HD Audio driver is already installed; skipping installation.");
+            return;
+        }
+
         var sourceInf = Path.Combine(AudioPayloadRoot, "AtihdWT6.inf");
         if (!File.Exists(sourceInf))
         {
