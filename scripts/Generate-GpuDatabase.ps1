@@ -18,6 +18,9 @@ $sources = [System.Collections.Generic.List[object]]::new()
 
 foreach ($inf in Get-ChildItem -LiteralPath $displayRoot -Recurse -Filter '*.inf' -File | Sort-Object FullName) {
     $lines = Get-Content -LiteralPath $inf.FullName
+    if (-not ($lines | Where-Object { $_ -match '^\s*Class\s*=\s*Display\s*$' })) {
+        continue
+    }
     $modelLines = @($lines | Where-Object { $_ -match $modelPattern })
     if ($modelLines.Count -eq 0) {
         continue

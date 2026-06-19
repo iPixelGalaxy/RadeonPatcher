@@ -4,11 +4,6 @@
   "sourceVersion": "26.6.1",
   "sources": [
     {
-      "inf": "amdpcibridgeextension.inf",
-      "sha256": "41f2235a26239447ef9a2049da8cd13eca963d4b8bc99459723c43c0968717c1",
-      "mappings": 2
-    },
-    {
       "inf": "u0201164.inf",
       "sha256": "5428aa08b4afaeffdc93ac5c2015ec80c154765c7e290a4eb3b29c9384d63cc6",
       "mappings": 5301
@@ -796,8 +791,6 @@
     "PCI\\VEN_1002&DEV_1114&SUBSYS_C0141071&REV_D3": "AMD Radeon(TM) 840M Graphics",
     "PCI\\VEN_1002&DEV_1114&SUBSYS_C1421071&REV_C2": "AMD Radeon(TM) 860M Graphics",
     "PCI\\VEN_1002&DEV_1114&SUBSYS_E0201D05&REV_C2": "AMD Radeon(TM) 860M Graphics",
-    "PCI\\VEN_1002&DEV_1478": "AMD PCI Bridge Device Extension",
-    "PCI\\VEN_1002&DEV_1479": "AMD PCI Bridge Device Extension",
     "PCI\\VEN_1002&DEV_150E&REV_C1": "AMD Radeon(TM) 890M Graphics",
     "PCI\\VEN_1002&DEV_150E&REV_C2": "AMD Radeon(TM) Graphics",
     "PCI\\VEN_1002&DEV_150E&REV_C3": "AMD Radeon(TM) Graphics",
