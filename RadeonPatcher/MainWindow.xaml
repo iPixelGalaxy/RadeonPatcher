@@ -427,7 +427,7 @@
                 </Grid.ColumnDefinitions>
                 <Grid Grid.Column="0" Margin="0,0,18,0">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto" MinWidth="185"/>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
@@ -438,7 +438,7 @@
                     </Grid.RowDefinitions>
                     <TextBlock FontWeight="SemiBold" Text="Detected hardware"/>
                     <TextBlock x:Name="GpuText" Grid.Row="1" Margin="0,8,0,0" TextWrapping="Wrap"/>
-                    <Button x:Name="RefreshButton" Grid.Column="1" Grid.RowSpan="2" Width="130" Height="34" Content="Refresh" Click="RefreshButton_Click"/>
+                    <Button x:Name="RefreshButton" Grid.Column="1" Grid.RowSpan="2" Width="130" Height="34" Margin="12,0,0,0" Content="Refresh" Click="RefreshButton_Click"/>
                     <Grid Grid.Row="2" Grid.ColumnSpan="3" Margin="0,8,0,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
