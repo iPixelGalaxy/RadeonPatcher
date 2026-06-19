@@ -30,13 +30,15 @@ public partial class MainWindow : Window
         Loaded += async (_, _) => await RefreshAsync();
     }
 
-    private async Task RefreshAsync()
+    private async Task RefreshAsync(bool refreshDrivers = false)
     {
         await Busy(async () =>
         {
             Log("Refreshing detected hardware and extracting embedded tools.");
-            _hardware = await _workflow.GetHardwareInfoAsync();
-            await _workflow.EnsurePayloadsAsync();
+            var hardwareTask = _workflow.GetHardwareInfoAsync();
+            var payloadTask = _workflow.EnsurePayloadsAsync();
+            await Task.WhenAll(hardwareTask, payloadTask);
+            _hardware = await hardwareTask;
 
             GpuText.Text = _hardware.GpuName ?? "No AMD display adapter detected.";
             DisplayDriverText.Text = _hardware.DisplayDriverPackageVersion is null
@@ -77,13 +79,13 @@ public partial class MainWindow : Window
             UpdateMpoButtonText();
             UpdateSelectedDriverText();
             Log("Ready.");
-            await LoadDriversAsync();
+            await LoadDriversAsync(refreshDrivers);
         });
     }
 
-    private async void RefreshButton_Click(object sender, RoutedEventArgs e) => await RefreshAsync();
+    private async void RefreshButton_Click(object sender, RoutedEventArgs e) => await RefreshAsync(refreshDrivers: true);
 
-    private async Task LoadDriversAsync()
+    private async Task LoadDriversAsync(bool forceRefresh = false)
     {
         DriverCombo.ItemsSource = null;
         SelectedDriverText.Text = "";
@@ -95,7 +97,7 @@ public partial class MainWindow : Window
         }
 
         Log($"Loading AMD driver versions from {supportUrl}");
-        var drivers = await _workflow.GetAvailableDriversAsync(supportUrl, Log);
+        var drivers = await _workflow.GetAvailableDriversAsync(supportUrl, Log, forceRefresh);
         DriverCombo.ItemsSource = drivers;
         DriverCombo.SelectedItem = drivers.FirstOrDefault(d => string.Equals(d.VersionText, _settings.SelectedDriverVersion, StringComparison.OrdinalIgnoreCase));
         DriverCombo.SelectedIndex = DriverCombo.SelectedItem is null && drivers.Count > 0 ? 0 : DriverCombo.SelectedIndex;
@@ -120,7 +122,7 @@ public partial class MainWindow : Window
             SourceSummaryText.Text = string.IsNullOrWhiteSpace(SupportUrlBox.Text)
                 ? "No mapped AMD support page was found. Enter a custom AMD support URL."
                 : $"Using detected AMD support page for {_hardware.GpuName}.";
-            await Busy(LoadDriversAsync);
+            await Busy(() => LoadDriversAsync());
         }
         else
         {
@@ -135,7 +137,7 @@ public partial class MainWindow : Window
         if (CustomUrlCheck.IsChecked == true)
         {
             SaveSettings();
-            await Busy(LoadDriversAsync);
+            await Busy(() => LoadDriversAsync());
         }
     }
 

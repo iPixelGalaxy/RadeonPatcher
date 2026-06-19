@@ -56,6 +56,7 @@ public sealed class DriverWorkflow : IDisposable
     private static readonly Regex DriverUrlRegex = new(@"https://drivers\.amd\.com/drivers/[^""'<>\s\\]+?\.exe", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex HtmlTagRegex = new("<.*?>", RegexOptions.Compiled);
     private readonly HttpClient _http = new();
+    private readonly Dictionary<string, IReadOnlyList<DriverRelease>> _driverCache = new(StringComparer.OrdinalIgnoreCase);
 
     public string WorkRoot { get; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "RadeonPatcher");
     private string ToolsRoot => Path.Combine(WorkRoot, "tools");
@@ -96,8 +97,9 @@ public sealed class DriverWorkflow : IDisposable
               } |
               Sort-Object @{ Expression = { if ($_.PNPClass -eq 'Display') { 0 } else { 1 } } }, Name |
               Select-Object -First 1
-            $drv = Get-CimInstance Win32_PnPSignedDriver | Where-Object { $_.DeviceClass -eq 'DISPLAY' -and ($_.DeviceID -match 'VEN_1002' -or $_.DeviceName -match 'AMD|Radeon') } | Select-Object -First 1
-            $aud = Get-CimInstance Win32_PnPSignedDriver | Where-Object { $_.DeviceClass -eq 'MEDIA' -and ($_.DeviceID -match 'HDAUDIO\\FUNC_01&VEN_1002&DEV_AA01' -or $_.DeviceName -match 'AMD High Definition Audio') } | Select-Object -First 1
+            $signedDrivers = Get-CimInstance Win32_PnPSignedDriver
+            $drv = $signedDrivers | Where-Object { $_.DeviceClass -eq 'DISPLAY' -and ($_.DeviceID -match 'VEN_1002' -or $_.DeviceName -match 'AMD|Radeon') } | Select-Object -First 1
+            $aud = $signedDrivers | Where-Object { $_.DeviceClass -eq 'MEDIA' -and ($_.DeviceID -match 'HDAUDIO\\FUNC_01&VEN_1002&DEV_AA01' -or $_.DeviceName -match 'AMD High Definition Audio') } | Select-Object -First 1
             $os = Get-CimInstance Win32_OperatingSystem
             $windowsVersion = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction SilentlyContinue
             $osName = ($os.Caption -replace '^Microsoft\s+', '')
@@ -152,8 +154,13 @@ public sealed class DriverWorkflow : IDisposable
         return $"https://www.amd.com/en/support/downloads/drivers.html/graphics/radeon-rx/{series}/amd-radeon-rx-{num}{suffix}.html";
     }
 
-    public async Task<IReadOnlyList<DriverRelease>> GetAvailableDriversAsync(string supportUrl, Action<string> log)
+    public async Task<IReadOnlyList<DriverRelease>> GetAvailableDriversAsync(string supportUrl, Action<string> log, bool forceRefresh = false)
     {
+        if (!forceRefresh && _driverCache.TryGetValue(supportUrl, out var cached))
+        {
+            return cached;
+        }
+
         var urls = new List<string> { supportUrl };
         if (supportUrl.Contains("/drivers.html/", StringComparison.OrdinalIgnoreCase))
         {
@@ -184,10 +191,12 @@ public sealed class DriverWorkflow : IDisposable
             }
         }
 
-        return releases.Values
+        var result = releases.Values
             .OrderByDescending(r => VersionKey(r.VersionText))
             .ThenByDescending(r => r.ReleaseDateText)
             .ToList();
+        _driverCache[supportUrl] = result;
+        return result;
     }
 
     public async Task InstallAsync(InstallRequest request, Action<string> log)
@@ -1083,6 +1092,10 @@ public sealed class DriverWorkflow : IDisposable
             var target = Path.Combine(destination, logicalName);
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             await using var source = assembly.GetManifestResourceStream(resource) ?? throw new InvalidOperationException($"Missing embedded resource {resource}.");
+            if (File.Exists(target) && new FileInfo(target).Length == source.Length)
+            {
+                continue;
+            }
             await using var output = File.Create(target);
             await source.CopyToAsync(output);
         }

@@ -116,6 +116,37 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        <Style x:Key="AppProgressBar" TargetType="ProgressBar">
+            <Setter Property="Foreground" Value="{DynamicResource LogoBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource ButtonBackgroundBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource InputBorderBrush}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ProgressBar">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="4" Padding="2">
+                            <Grid ClipToBounds="True">
+                                <Border x:Name="Indicator" Width="42" HorizontalAlignment="Left" Background="{TemplateBinding Foreground}" CornerRadius="2">
+                                    <Border.RenderTransform>
+                                        <TranslateTransform x:Name="IndicatorTransform"/>
+                                    </Border.RenderTransform>
+                                </Border>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsIndeterminate" Value="True">
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard RepeatBehavior="Forever">
+                                            <DoubleAnimation Storyboard.TargetName="IndicatorTransform" Storyboard.TargetProperty="X" From="-44" To="120" Duration="0:0:0.8"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <Style TargetType="TextBox">
             <Setter Property="Background" Value="{DynamicResource InputBackgroundBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}"/>
@@ -525,7 +556,7 @@
         </Grid>
 
         <DockPanel Grid.Row="3" Margin="0,14,0,0" LastChildFill="False">
-            <ProgressBar x:Name="Progress" DockPanel.Dock="Left" Width="120" Height="20" IsIndeterminate="False" Visibility="Hidden"/>
+            <ProgressBar x:Name="Progress" DockPanel.Dock="Left" Width="120" Height="20" IsIndeterminate="False" Visibility="Hidden" Style="{StaticResource AppProgressBar}"/>
             <Button x:Name="InstallButton" DockPanel.Dock="Right" Width="135" Height="38" Content="Install" Click="InstallButton_Click"/>
             <Button x:Name="RemoveAdrenalinButton" DockPanel.Dock="Right" Width="270" Height="38" Margin="0,0,10,0" Content="Remove AMD Software: Adrenalin Edition" Click="RemoveAdrenalinButton_Click" Visibility="Collapsed"/>
             <Button x:Name="ToggleMpoButton" DockPanel.Dock="Right" Width="135" Height="38" Margin="0,0,10,0" Click="ToggleMpoButton_Click" ToolTip="Enables or removes the MPO registry override. Restart or sign out/in after changing it.">
