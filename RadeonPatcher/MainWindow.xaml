@@ -402,7 +402,7 @@
                     <ComboBoxItem Content="Light"/>
                     <ComboBoxItem Content="Dark"/>
                 </ComboBox>
-                <Button x:Name="RefreshButton" Width="130" Height="34" Content="Refresh" Click="RefreshButton_Click"/>
+                <Button x:Name="ClearDownloadCacheButton" Width="170" Height="34" Content="Clear Download Cache" Click="ClearDownloadCacheButton_Click"/>
             </StackPanel>
             <StackPanel Orientation="Horizontal">
                 <Border Width="64" Height="40" Margin="0,0,14,0">
@@ -426,14 +426,23 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel Grid.Column="0" Margin="0,0,18,0">
-                    <TextBlock FontWeight="SemiBold" Text="Detected hardware"/>
+                    <DockPanel Margin="0,0,0,8">
+                        <TextBlock DockPanel.Dock="Left" FontWeight="SemiBold" Text="Detected hardware"/>
+                        <Button x:Name="RefreshButton" DockPanel.Dock="Right" Width="78" Height="30" Content="Refresh" Click="RefreshButton_Click"/>
+                    </DockPanel>
                     <TextBlock x:Name="GpuText" Margin="0,8,0,0" TextWrapping="Wrap"/>
-                    <TextBlock x:Name="DisplayDriverText" Margin="0,8,0,0" Foreground="{DynamicResource SecondaryTextBrush}"/>
+                    <Grid Margin="0,8,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="DisplayDriverText" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
+                        <TextBlock x:Name="AudioText" Grid.Column="1" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
+                    </Grid>
                 </StackPanel>
                 <StackPanel Grid.Column="1">
                     <TextBlock FontWeight="SemiBold" Text="System"/>
                     <TextBlock x:Name="OsText" Margin="0,8,0,0"/>
-                    <TextBlock x:Name="AudioText" Foreground="{DynamicResource SecondaryTextBrush}"/>
                 </StackPanel>
             </Grid>
         </Border>
@@ -484,6 +493,7 @@
                             <CheckBox x:Name="AudioCheck" Content="Install AMD HD Audio Driver"/>
                             <TextBlock x:Name="AudioInstalledHint" Text=" (?)" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" Cursor="Help" ToolTip="AMD HD Audio Driver is already installed." Visibility="Collapsed"/>
                         </StackPanel>
+                        <CheckBox x:Name="AutoClearDownloadCacheCheck" Content="Auto Clear Downloaded Cache" IsChecked="True" Margin="0,0,0,10"/>
                         <Button x:Name="UninstallDriverButton" Height="34" Margin="0,4,0,0" Content="Uninstall Driver &amp; Software" Click="UninstallDriverButton_Click"/>
                     </StackPanel>
                 </StackPanel>

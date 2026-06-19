@@ -40,12 +40,14 @@ public partial class MainWindow : Window
 
             GpuText.Text = _hardware.GpuName ?? "No AMD display adapter detected.";
             DisplayDriverText.Text = _hardware.DisplayDriverPackageVersion is null
-                ? $"Current Driver: Unknown (Windows driver {_hardware.DisplayDriverVersion ?? "unknown"})"
-                : $"Current Driver: {_hardware.DisplayDriverPackageVersion}";
+                ? _hardware.DisplayDriverVersion is null
+                    ? "Installed Video Driver: None"
+                    : $"Installed Video Driver: Unknown (Windows driver {_hardware.DisplayDriverVersion})"
+                : $"Installed Video Driver: {_hardware.DisplayDriverPackageVersion}";
             OsText.Text = $"{_hardware.OsName} ({_hardware.OsVersion})";
             AudioText.Text = _hardware.AudioDriverVersion is null
-                ? "AMD HD Audio: not detected"
-                : $"AMD HD Audio: {_hardware.AudioDriverVersion}";
+                ? "Installed AMD HD Audio Driver: None"
+                : $"Installed AMD HD Audio Driver: {_hardware.AudioDriverVersion}";
 
             var savedCustomUrl = _settings.CustomSupportUrl;
             var supportUrl = string.IsNullOrWhiteSpace(savedCustomUrl)
@@ -151,7 +153,8 @@ public partial class MainWindow : Window
                 hardware.IsServer,
                 AdrenalinCheck.IsChecked == true,
                 hardware.IsAdrenalinInstalled && IsSelectedDriverDifferentFromCurrent(),
-                AudioCheck.IsChecked == true);
+                AudioCheck.IsChecked == true,
+                AutoClearDownloadCacheCheck.IsChecked == true);
 
             await _workflow.InstallAsync(request, Log);
             Log("Install workflow finished.");
@@ -176,6 +179,9 @@ public partial class MainWindow : Window
                 : "Install Update Check Service";
         });
     }
+
+    private async void ClearDownloadCacheButton_Click(object sender, RoutedEventArgs e) =>
+        await Busy(() => _workflow.ClearDownloadCacheAsync(Log));
 
     private async void RemoveAdrenalinButton_Click(object sender, RoutedEventArgs e)
     {
@@ -319,6 +325,7 @@ public partial class MainWindow : Window
         InstallDisplayDriverCheck.IsChecked = _settings.InstallGpuDriver;
         AdrenalinCheck.IsChecked = _settings.InstallAdrenalin;
         AudioCheck.IsChecked = _settings.InstallAudioDriver;
+        AutoClearDownloadCacheCheck.IsChecked = _settings.AutoClearDownloadedCache;
         _applyingSettings = false;
         InstallDisplayDriverCheck.Checked += (_, _) => SaveSettings();
         InstallDisplayDriverCheck.Unchecked += (_, _) => SaveSettings();
@@ -326,6 +333,8 @@ public partial class MainWindow : Window
         AdrenalinCheck.Unchecked += (_, _) => SaveSettings();
         AudioCheck.Checked += (_, _) => SaveSettings();
         AudioCheck.Unchecked += (_, _) => SaveSettings();
+        AutoClearDownloadCacheCheck.Checked += (_, _) => SaveSettings();
+        AutoClearDownloadCacheCheck.Unchecked += (_, _) => SaveSettings();
     }
 
     private void SaveSettings()
@@ -338,6 +347,7 @@ public partial class MainWindow : Window
         _settings.InstallGpuDriver = InstallDisplayDriverCheck.IsChecked == true;
         _settings.InstallAdrenalin = AdrenalinCheck.IsChecked == true;
         _settings.InstallAudioDriver = AudioCheck.IsChecked == true;
+        _settings.AutoClearDownloadedCache = AutoClearDownloadCacheCheck.IsChecked == true;
         _settings.CustomSupportUrl = CustomUrlCheck.IsChecked == true ? SupportUrlBox.Text.Trim() : null;
         UserSettingsStore.Save(_settings);
     }
@@ -365,6 +375,7 @@ public partial class MainWindow : Window
         Progress.Visibility = busy ? Visibility.Visible : Visibility.Hidden;
         Progress.IsIndeterminate = busy;
         RefreshButton.IsEnabled = !busy;
+        ClearDownloadCacheButton.IsEnabled = !busy;
         ThemeCombo.IsEnabled = !busy;
         InstallButton.IsEnabled = !busy;
         ToggleMpoButton.IsEnabled = !busy;

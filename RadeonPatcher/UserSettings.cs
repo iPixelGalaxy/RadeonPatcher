@@ -8,6 +8,7 @@ public sealed class UserSettings
     public bool InstallGpuDriver { get; set; } = true;
     public bool InstallAdrenalin { get; set; } = true;
     public bool InstallAudioDriver { get; set; } = true;
+    public bool AutoClearDownloadedCache { get; set; } = true;
     public string? CustomSupportUrl { get; set; }
     public string? SelectedDriverVersion { get; set; }
 }

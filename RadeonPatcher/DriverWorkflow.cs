@@ -41,7 +41,8 @@ public sealed record InstallRequest(
     bool EnableServerCompatibility,
     bool InstallAdrenalin,
     bool ReplaceAdrenalin,
-    bool InstallBundledAudio);
+    bool InstallBundledAudio,
+    bool AutoClearDownloadedCache);
 
 public sealed record UpdateCheckResult(
     bool UpdateAvailable,
@@ -211,6 +212,33 @@ public sealed class DriverWorkflow : IDisposable
             await InstallBundledAudioAsync(request.EnableServerCompatibility, log);
         }
 
+        if (request.AutoClearDownloadedCache)
+        {
+            ClearDownloadCache(log);
+        }
+
+    }
+
+    public Task ClearDownloadCacheAsync(Action<string> log)
+    {
+        ClearDownloadCache(log);
+        return Task.CompletedTask;
+    }
+
+    private void ClearDownloadCache(Action<string> log)
+    {
+        log("Clearing downloaded driver cache.");
+        foreach (var directory in new[] { DownloadsRoot, ExtractedRoot })
+        {
+            if (!Directory.Exists(directory)) continue;
+            foreach (var entry in Directory.EnumerateFileSystemEntries(directory))
+            {
+                if (Directory.Exists(entry)) Directory.Delete(entry, true);
+                else File.Delete(entry);
+            }
+        }
+
+        log("Downloaded driver cache cleared.");
     }
 
     public async Task<bool> ToggleUpdateCheckServiceAsync(bool installed, Action<string> log)
