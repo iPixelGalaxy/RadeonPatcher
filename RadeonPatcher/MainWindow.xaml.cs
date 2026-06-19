@@ -52,7 +52,9 @@ public partial class MainWindow : Window
             SourceSummaryText.Text = needsCustomUrl
                 ? "No mapped AMD support page was found. Enter a custom AMD support URL."
                 : $"Using detected AMD support page for {_hardware.GpuName}.";
+            ServerCompatCheck.Visibility = _hardware.IsServer ? Visibility.Visible : Visibility.Collapsed;
             ServerCompatCheck.IsChecked = _hardware.IsServer;
+            ServerCompatCheck.IsEnabled = false;
             AudioCheck.IsChecked = _hardware.AudioDriverVersion is null;
             AudioCheck.Visibility = _hardware.AudioDriverVersion is null ? Visibility.Visible : Visibility.Collapsed;
             UpdateCheckServiceButtonText.Text = _hardware.IsUpdateCheckServiceInstalled
@@ -132,10 +134,9 @@ public partial class MainWindow : Window
                 DriverCombo.SelectedItem as DriverRelease,
                 SupportUrlBox.Text.Trim(),
                 InstallDisplayDriverCheck.IsChecked == true,
-                ServerCompatCheck.IsChecked == true,
+                hardware.IsServer,
                 AdrenalinCheck.IsChecked == true,
-                AudioCheck.IsChecked == true,
-                ForceDownloadCheck.IsChecked == true);
+                AudioCheck.IsChecked == true);
 
             await _workflow.InstallAsync(request, Log);
             Log("Install workflow finished.");

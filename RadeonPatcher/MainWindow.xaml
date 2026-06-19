@@ -436,7 +436,6 @@
                         <CheckBox x:Name="ServerCompatCheck" Content="Enable Windows Server Compatibility" Margin="0,0,0,10"/>
                         <CheckBox x:Name="AdrenalinCheck" Content="Install AMD Software: Adrenalin Edition" IsChecked="True" Margin="0,0,0,10"/>
                         <CheckBox x:Name="AudioCheck" Content="Install AMD HD Audio Driver" Margin="0,0,0,10"/>
-                        <CheckBox x:Name="ForceDownloadCheck" Content="Force re-download package" Margin="0,0,0,10"/>
                     </StackPanel>
                 </StackPanel>
             </Border>

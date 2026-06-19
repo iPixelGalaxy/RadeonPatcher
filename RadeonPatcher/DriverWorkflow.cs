@@ -39,8 +39,7 @@ public sealed record InstallRequest(
     bool InstallDisplayDriver,
     bool EnableServerCompatibility,
     bool InstallAdrenalin,
-    bool InstallBundledAudio,
-    bool ForceDownload);
+    bool InstallBundledAudio);
 
 public sealed record UpdateCheckResult(
     bool UpdateAvailable,
@@ -219,7 +218,7 @@ public sealed class DriverWorkflow : IDisposable
         await EnsurePayloadsAsync();
         if (request.Driver is not null)
         {
-            var packageExe = await DownloadDriverAsync(request.Driver, request.ForceDownload, log);
+            var packageExe = await DownloadDriverAsync(request.Driver, false, log);
             var packageRoot = await ExtractPackageAsync(packageExe, log);
             if (request.InstallDisplayDriver)
             {
