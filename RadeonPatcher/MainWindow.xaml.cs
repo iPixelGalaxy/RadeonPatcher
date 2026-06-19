@@ -60,11 +60,14 @@ public partial class MainWindow : Window
             SourceSummaryText.Text = needsCustomUrl
                 ? "No mapped AMD support page was found. Enter a custom AMD support URL."
                 : $"Using detected AMD support page for {_hardware.GpuName}.";
-            ServerCompatCheck.Visibility = _hardware.IsServer ? Visibility.Visible : Visibility.Collapsed;
             ServerCompatCheck.IsChecked = _hardware.IsServer;
             ServerCompatCheck.IsEnabled = false;
-            AudioCheck.IsChecked = _settings.InstallAudioDriver;
-            AudioCheck.Visibility = _hardware.AudioDriverVersion is null ? Visibility.Visible : Visibility.Collapsed;
+            var audioInstalled = _hardware.AudioDriverVersion is not null;
+            _updatingOptions = true;
+            AudioCheck.IsChecked = audioInstalled ? false : _settings.InstallAudioDriver;
+            AudioCheck.IsEnabled = !audioInstalled;
+            _updatingOptions = false;
+            AudioInstalledHint.Visibility = audioInstalled ? Visibility.Visible : Visibility.Collapsed;
             UpdateCheckServiceButtonText.Text = _hardware.IsUpdateCheckServiceInstalled
                 ? "Uninstall Update Check Service"
                 : "Install Update Check Service";

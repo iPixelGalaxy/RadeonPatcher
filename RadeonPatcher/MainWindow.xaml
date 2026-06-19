@@ -469,9 +469,15 @@
                     <StackPanel x:Name="InstallOptionsPanel" Visibility="Hidden">
                         <Separator Margin="0,18,0,14"/>
                         <CheckBox x:Name="InstallDisplayDriverCheck" Content="Install GPU Driver" IsChecked="True" Margin="0,0,0,10"/>
-                        <CheckBox x:Name="ServerCompatCheck" Content="Enable Windows Server Compatibility" Margin="0,0,0,10"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <CheckBox x:Name="ServerCompatCheck" Content="Enable Windows Server Compatibility"/>
+                            <TextBlock Text=" (?)" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" Cursor="Help" ToolTip="Standard AMD Drivers only support Workstation editions with the .1 flag, while Server is .3. The driver works perfectly, unsure why AMD made this choice."/>
+                        </StackPanel>
                         <CheckBox x:Name="AdrenalinCheck" Content="Install AMD Software: Adrenalin Edition" IsChecked="True" Margin="0,0,0,10"/>
-                        <CheckBox x:Name="AudioCheck" Content="Install AMD HD Audio Driver" Margin="0,0,0,10"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <CheckBox x:Name="AudioCheck" Content="Install AMD HD Audio Driver"/>
+                            <TextBlock x:Name="AudioInstalledHint" Text=" (?)" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" Cursor="Help" ToolTip="AMD HD Audio Driver is already installed." Visibility="Collapsed"/>
+                        </StackPanel>
                     </StackPanel>
                 </StackPanel>
             </Border>
