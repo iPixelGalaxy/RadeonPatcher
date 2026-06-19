@@ -33,6 +33,13 @@ public sealed record DriverRelease(
     string DownloadUrl,
     string SupportUrl);
 
+public enum AudioInstallSource
+{
+    None,
+    DriverPackage,
+    BundledLatest
+}
+
 public sealed record InstallRequest(
     HardwareInfo Hardware,
     DriverRelease? Driver,
@@ -41,7 +48,7 @@ public sealed record InstallRequest(
     bool EnableServerCompatibility,
     bool InstallAdrenalin,
     bool ReplaceAdrenalin,
-    bool InstallBundledAudio,
+    AudioInstallSource AudioInstallSource,
     bool AutoClearDownloadedCache);
 
 public sealed record UpdateCheckResult(
@@ -105,6 +112,8 @@ public sealed class DriverWorkflow : IDisposable
             $signedDrivers = Get-CimInstance Win32_PnPSignedDriver
             $drv = $signedDrivers | Where-Object { $_.DeviceClass -eq 'DISPLAY' -and ($_.DeviceID -match 'VEN_1002' -or $_.DeviceName -match 'AMD|Radeon') } | Select-Object -First 1
             $aud = $signedDrivers | Where-Object { $_.DeviceClass -eq 'MEDIA' -and ($_.DeviceID -match 'HDAUDIO\\FUNC_01&VEN_1002&DEV_AA01' -or $_.DeviceName -match 'AMD High Definition Audio') } | Select-Object -First 1
+            $hasAmdDisplayDriver = $drv -and $drv.DriverProviderName -match 'AMD|Advanced Micro Devices' -and $drv.InfName -notmatch '^display\.inf$'
+            $hasAmdAudioDriver = $aud -and $aud.DriverProviderName -match 'AMD|Advanced Micro Devices' -and $aud.InfName -notmatch '^hdaudio\.inf$'
             $os = Get-CimInstance Win32_OperatingSystem
             $windowsVersion = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction SilentlyContinue
             $osName = ($os.Caption -replace '^Microsoft\s+', '')
@@ -114,7 +123,7 @@ public sealed class DriverWorkflow : IDisposable
             $updateCheckInstalled = $null -ne (Get-ScheduledTask -TaskName 'RadeonPatcher Update Check' -ErrorAction SilentlyContinue)
             $adrenalinInstalled = Test-Path -LiteralPath 'C:\Program Files\AMD\CNext\CNext\RadeonSoftware.exe'
             $originalInf = $null
-            if ($gpu.Service) {
+            if ($hasAmdDisplayDriver -and $gpu.Service) {
               $service = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\$($gpu.Service)" -ErrorAction SilentlyContinue
               $match = [regex]::Match([string]$service.ImagePath, '\\(?<inf>[^\\]+\.inf)_amd64_', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
               if ($match.Success) { $originalInf = $match.Groups['inf'].Value }
@@ -122,9 +131,9 @@ public sealed class DriverWorkflow : IDisposable
             [pscustomobject]@{
               GpuName=$gpu.Name
               GpuInstanceId=$gpu.PNPDeviceID
-              DisplayDriverVersion=$drv.DriverVersion
+              DisplayDriverVersion=if ($hasAmdDisplayDriver) { $drv.DriverVersion } else { $null }
               DisplayDriverOriginalInf=$originalInf
-              AudioDriverVersion=$aud.DriverVersion
+              AudioDriverVersion=if ($hasAmdAudioDriver) { $aud.DriverVersion } else { $null }
               OsName=$osName
               OsVersion=$osBuild
               IsServer=($os.ProductType -ne 1)
@@ -223,9 +232,13 @@ public sealed class DriverWorkflow : IDisposable
             {
                 await InstallAdrenalinAsync(packageRoot, request.ReplaceAdrenalin, log);
             }
+            if (request.AudioInstallSource == AudioInstallSource.DriverPackage)
+            {
+                await InstallPackageAudioAsync(packageRoot, request.EnableServerCompatibility, log);
+            }
         }
 
-        if (request.InstallBundledAudio)
+        if (request.AudioInstallSource == AudioInstallSource.BundledLatest)
         {
             await InstallBundledAudioAsync(request.EnableServerCompatibility, log);
         }
@@ -823,6 +836,29 @@ public sealed class DriverWorkflow : IDisposable
         }
 
         log($"Installing bundled AMD HD Audio driver: {inf}");
+        await RunProcessAsync("pnputil.exe", $"/add-driver \"{inf}\" /install", log, allowNoUpdate: true);
+    }
+
+    private async Task InstallPackageAudioAsync(string packageRoot, bool serverCompatibility, Action<string> log)
+    {
+        var sourceInf = Directory.EnumerateFiles(packageRoot, "AtihdWT6.inf", SearchOption.AllDirectories)
+            .FirstOrDefault(path => path.Contains($"{Path.DirectorySeparatorChar}Audio{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase));
+        if (sourceInf is null)
+        {
+            log("The selected GPU package does not contain an AMD HD Audio driver.");
+            return;
+        }
+
+        var inf = sourceInf;
+        if (serverCompatibility)
+        {
+            var package = CopyPackageDirectory(sourceInf, "audio");
+            inf = Path.Combine(package, Path.GetFileName(sourceInf));
+            PatchGenericAmdInf(inf, log);
+            await SignPackageAsync(package, inf, log);
+        }
+
+        log($"Installing AMD HD Audio driver included with the selected GPU package: {inf}");
         await RunProcessAsync("pnputil.exe", $"/add-driver \"{inf}\" /install", log, allowNoUpdate: true);
     }
 

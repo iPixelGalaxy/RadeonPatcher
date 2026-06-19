@@ -83,7 +83,9 @@ public partial class MainWindow : Window
             AudioCheck.IsChecked = audioInstalled ? false : _settings.InstallAudioDriver;
             AudioCheck.IsEnabled = !audioInstalled;
             _updatingOptions = false;
-            AudioInstalledHint.Visibility = audioInstalled ? Visibility.Visible : Visibility.Collapsed;
+            AudioInstalledHint.ToolTip = audioInstalled
+                ? "AMD HD Audio Driver is already installed."
+                : "AMD does not provide the latest driver with their GPU Drivers, this driver is sourced from Snappy Driver Installer.";
             UpdateCheckServiceButtonText.Text = _hardware.IsUpdateCheckServiceInstalled
                 ? "Uninstall Update Check Service"
                 : "Install Update Check Service";
@@ -166,7 +168,11 @@ public partial class MainWindow : Window
                 hardware.IsServer,
                 AdrenalinCheck.IsChecked == true,
                 hardware.IsAdrenalinInstalled && IsSelectedDriverDifferentFromCurrent(),
-                AudioCheck.IsChecked == true,
+                hardware.AudioDriverVersion is not null
+                    ? AudioInstallSource.None
+                    : AudioCheck.IsChecked == true
+                        ? AudioInstallSource.BundledLatest
+                        : AudioInstallSource.DriverPackage,
                 AutoClearDownloadCacheCheck.IsChecked == true);
 
             await _workflow.InstallAsync(request, Log);
