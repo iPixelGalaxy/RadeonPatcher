@@ -12,12 +12,16 @@ namespace RadeonPatcher;
 public partial class MainWindow : Window
 {
     private readonly DriverWorkflow _workflow = new();
+    private readonly UserSettings _settings;
     private HardwareInfo? _hardware;
     private AppThemeMode _themeMode = AppThemeMode.System;
+    private bool _applyingSettings;
 
     public MainWindow()
     {
         InitializeComponent();
+        _settings = UserSettingsStore.Load();
+        ApplySavedSettings();
         ApplyTheme();
         SourceInitialized += (_, _) => ApplyTitleBarTheme();
         SystemEvents.UserPreferenceChanged += SystemEvents_UserPreferenceChanged;
@@ -42,9 +46,12 @@ public partial class MainWindow : Window
                 ? "AMD HD Audio: not detected"
                 : $"AMD HD Audio: {_hardware.AudioDriverVersion}";
 
-            var supportUrl = _workflow.ResolveSupportUrl(_hardware) ?? "";
+            var savedCustomUrl = _settings.CustomSupportUrl;
+            var supportUrl = string.IsNullOrWhiteSpace(savedCustomUrl)
+                ? _workflow.ResolveSupportUrl(_hardware) ?? ""
+                : savedCustomUrl;
             SupportUrlBox.Text = supportUrl;
-            var needsCustomUrl = string.IsNullOrWhiteSpace(supportUrl);
+            var needsCustomUrl = !string.IsNullOrWhiteSpace(savedCustomUrl) || string.IsNullOrWhiteSpace(supportUrl);
             DriverSourcePanel.Visibility = needsCustomUrl ? Visibility.Visible : Visibility.Collapsed;
             CustomUrlCheck.Visibility = needsCustomUrl ? Visibility.Visible : Visibility.Collapsed;
             CustomUrlCheck.IsChecked = needsCustomUrl;
@@ -55,7 +62,7 @@ public partial class MainWindow : Window
             ServerCompatCheck.Visibility = _hardware.IsServer ? Visibility.Visible : Visibility.Collapsed;
             ServerCompatCheck.IsChecked = _hardware.IsServer;
             ServerCompatCheck.IsEnabled = false;
-            AudioCheck.IsChecked = _hardware.AudioDriverVersion is null;
+            AudioCheck.IsChecked = _settings.InstallAudioDriver;
             AudioCheck.Visibility = _hardware.AudioDriverVersion is null ? Visibility.Visible : Visibility.Collapsed;
             UpdateCheckServiceButtonText.Text = _hardware.IsUpdateCheckServiceInstalled
                 ? "Uninstall Update Check Service"
@@ -86,7 +93,8 @@ public partial class MainWindow : Window
         Log($"Loading AMD driver versions from {supportUrl}");
         var drivers = await _workflow.GetAvailableDriversAsync(supportUrl, Log);
         DriverCombo.ItemsSource = drivers;
-        DriverCombo.SelectedIndex = drivers.Count > 0 ? 0 : -1;
+        DriverCombo.SelectedItem = drivers.FirstOrDefault(d => string.Equals(d.VersionText, _settings.SelectedDriverVersion, StringComparison.OrdinalIgnoreCase));
+        DriverCombo.SelectedIndex = DriverCombo.SelectedItem is null && drivers.Count > 0 ? 0 : DriverCombo.SelectedIndex;
         Log($"Loaded {drivers.Count} driver option(s).");
     }
 
@@ -114,12 +122,15 @@ public partial class MainWindow : Window
         {
             SourceSummaryText.Text = "Using a custom AMD support page.";
         }
+
+        SaveSettings();
     }
 
     private async void SupportUrlBox_LostFocus(object sender, RoutedEventArgs e)
     {
         if (CustomUrlCheck.IsChecked == true)
         {
+            SaveSettings();
             await Busy(LoadDriversAsync);
         }
     }
@@ -184,6 +195,11 @@ public partial class MainWindow : Window
         }
 
         SelectedDriverText.Text = $"{driver.ReleaseDateText}  {driver.FileSizeText}";
+        if (!_applyingSettings)
+        {
+            _settings.SelectedDriverVersion = driver.VersionText;
+            SaveSettings();
+        }
         var currentVersion = _hardware?.DisplayDriverPackageVersion;
         if (Version.TryParse(driver.VersionText, out var selected) && Version.TryParse(currentVersion, out var current))
         {
@@ -201,6 +217,35 @@ public partial class MainWindow : Window
     private void UpdateMpoButtonText() => ToggleMpoButtonText.Text = _hardware?.IsMpoDisabled == true
         ? "Turn MPO On"
         : "Turn MPO Off";
+
+    private void ApplySavedSettings()
+    {
+        _applyingSettings = true;
+        InstallDisplayDriverCheck.IsChecked = _settings.InstallGpuDriver;
+        AdrenalinCheck.IsChecked = _settings.InstallAdrenalin;
+        AudioCheck.IsChecked = _settings.InstallAudioDriver;
+        _applyingSettings = false;
+        InstallDisplayDriverCheck.Checked += (_, _) => SaveSettings();
+        InstallDisplayDriverCheck.Unchecked += (_, _) => SaveSettings();
+        AdrenalinCheck.Checked += (_, _) => SaveSettings();
+        AdrenalinCheck.Unchecked += (_, _) => SaveSettings();
+        AudioCheck.Checked += (_, _) => SaveSettings();
+        AudioCheck.Unchecked += (_, _) => SaveSettings();
+    }
+
+    private void SaveSettings()
+    {
+        if (_applyingSettings)
+        {
+            return;
+        }
+
+        _settings.InstallGpuDriver = InstallDisplayDriverCheck.IsChecked == true;
+        _settings.InstallAdrenalin = AdrenalinCheck.IsChecked == true;
+        _settings.InstallAudioDriver = AudioCheck.IsChecked == true;
+        _settings.CustomSupportUrl = CustomUrlCheck.IsChecked == true ? SupportUrlBox.Text.Trim() : null;
+        UserSettingsStore.Save(_settings);
+    }
 
     private async Task Busy(Func<Task> action)
     {

@@ -102,7 +102,7 @@ public sealed class DriverWorkflow : IDisposable
             try { $mpoDisabled = ((Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\Dwm' -ErrorAction SilentlyContinue).OverlayTestMode -eq 5) } catch {}
             $updateCheckInstalled = $null -ne (Get-ScheduledTask -TaskName 'RadeonPatcher Update Check' -ErrorAction SilentlyContinue)
             $adrenalinInstalled = $null -ne (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
-              Where-Object { $_.DisplayName -match '^AMD Software(?:: Adrenalin Edition)?$' } |
+              Where-Object { $_.DisplayName -match '^(AMD Software|AMD Settings)(?:: Adrenalin Edition)?$' } |
               Select-Object -First 1)
             $packageVersion = $null
             if ($drv) {

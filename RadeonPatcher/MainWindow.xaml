@@ -420,7 +420,7 @@
                         </StackPanel>
                     </StackPanel>
 
-                    <TextBlock Margin="0,18,0,4" Text="Driver version"/>
+                    <TextBlock FontWeight="SemiBold" Text="Driver version"/>
                     <ComboBox x:Name="DriverCombo" MinHeight="32">
                         <ComboBox.ItemTemplate>
                             <DataTemplate>
@@ -448,7 +448,6 @@
                     </Grid.RowDefinitions>
                     <DockPanel Margin="0,0,0,10">
                         <TextBlock DockPanel.Dock="Left" FontWeight="SemiBold" Text="Log"/>
-                        <Button DockPanel.Dock="Right" Width="90" Content="Clear" Click="ClearLogButton_Click"/>
                     </DockPanel>
                     <TextBox x:Name="LogBox" Grid.Row="1" FontFamily="Consolas" FontSize="12" IsReadOnly="True"
                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
@@ -473,6 +472,7 @@
                     <TextBlock Text=" (?)" Foreground="{DynamicResource SecondaryTextBrush}"/>
                 </StackPanel>
             </Button>
+            <Button DockPanel.Dock="Right" Width="90" Height="38" Margin="0,0,10,0" Content="Clear Log" Click="ClearLogButton_Click"/>
         </DockPanel>
     </Grid>
 </Window>
