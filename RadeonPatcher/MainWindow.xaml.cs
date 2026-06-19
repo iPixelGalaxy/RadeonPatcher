@@ -54,11 +54,9 @@ public partial class MainWindow : Window
                 : $"Using detected AMD support page for {_hardware.GpuName}.";
             ServerCompatCheck.IsChecked = _hardware.IsServer;
             AudioCheck.IsChecked = _hardware.AudioDriverVersion is null || Version.Parse(_hardware.AudioDriverVersion) < Version.Parse("10.0.1.42");
-            UpdateCheckServiceCheck.IsChecked = false;
-            UpdateCheckServiceCheck.IsEnabled = true;
-            UpdateCheckServiceCheck.Content = _hardware.IsUpdateCheckServiceInstalled
-                ? "Uninstall Update Check Service"
-                : "Install Update Check Service";
+            UpdateCheckServiceButton.Content = _hardware.IsUpdateCheckServiceInstalled
+                ? "Uninstall Update Service"
+                : "Install Update Service";
             AdrenalinCheck.Content = _hardware.IsAdrenalinInstalled
                 ? "Reinstall AMD Software: Adrenalin Edition"
                 : "Install AMD Software: Adrenalin Edition";
@@ -135,18 +133,23 @@ public partial class MainWindow : Window
                 ServerCompatCheck.IsChecked == true,
                 AdrenalinCheck.IsChecked == true,
                 AudioCheck.IsChecked == true,
-                !hardware.IsUpdateCheckServiceInstalled && UpdateCheckServiceCheck.IsChecked == true,
-                hardware.IsUpdateCheckServiceInstalled && UpdateCheckServiceCheck.IsChecked == true,
                 ForceDownloadCheck.IsChecked == true);
 
             await _workflow.InstallAsync(request, Log);
-            if (UpdateCheckServiceCheck.IsChecked == true && hardware.IsUpdateCheckServiceInstalled)
-            {
-                _hardware = hardware with { IsUpdateCheckServiceInstalled = false };
-                UpdateCheckServiceCheck.IsChecked = false;
-                UpdateCheckServiceCheck.Content = "Install Update Check Service";
-            }
             Log("Install workflow finished.");
+        });
+    }
+
+    private async void UpdateCheckServiceButton_Click(object sender, RoutedEventArgs e)
+    {
+        var hardware = _hardware ?? await _workflow.GetHardwareInfoAsync();
+        await Busy(async () =>
+        {
+            var installed = await _workflow.ToggleUpdateCheckServiceAsync(hardware.IsUpdateCheckServiceInstalled, Log);
+            _hardware = hardware with { IsUpdateCheckServiceInstalled = installed };
+            UpdateCheckServiceButton.Content = installed
+                ? "Uninstall Update Service"
+                : "Install Update Service";
         });
     }
 
@@ -210,6 +213,7 @@ public partial class MainWindow : Window
         ThemeCombo.IsEnabled = !busy;
         InstallButton.IsEnabled = !busy;
         ToggleMpoButton.IsEnabled = !busy;
+        UpdateCheckServiceButton.IsEnabled = !busy;
     }
 
     private void Log(string message)

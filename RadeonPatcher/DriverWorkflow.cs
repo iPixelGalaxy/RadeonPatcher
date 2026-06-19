@@ -40,8 +40,6 @@ public sealed record InstallRequest(
     bool EnableServerCompatibility,
     bool InstallAdrenalin,
     bool InstallBundledAudio,
-    bool InstallUpdateCheckService,
-    bool UninstallUpdateCheckService,
     bool ForceDownload);
 
 public sealed record UpdateCheckResult(
@@ -238,15 +236,18 @@ public sealed class DriverWorkflow : IDisposable
             await InstallBundledAudioAsync(request.EnableServerCompatibility, log);
         }
 
-        if (request.InstallUpdateCheckService)
-        {
-            await InstallUpdateCheckServiceAsync(log);
-        }
+    }
 
-        if (request.UninstallUpdateCheckService)
+    public async Task<bool> ToggleUpdateCheckServiceAsync(bool installed, Action<string> log)
+    {
+        if (installed)
         {
             await UninstallUpdateCheckServiceAsync(log);
+            return false;
         }
+
+        await InstallUpdateCheckServiceAsync(log);
+        return true;
     }
 
     public Task<string> SetMpoOverrideAsync(bool disable, Action<string> log)
