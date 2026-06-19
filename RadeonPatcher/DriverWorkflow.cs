@@ -386,6 +386,13 @@ public sealed class DriverWorkflow : IDisposable
     {
         await RunProcessAsync("pnputil.exe", $"/add-driver \"{infPath}\"", log);
 
+        var activeInf = await GetActiveDisplayDriverInfNameAsync(instanceId);
+        if (!string.IsNullOrWhiteSpace(activeInf))
+        {
+            log($"Removing active display driver package: {activeInf}");
+            await RunProcessAsync("pnputil.exe", $"/delete-driver {activeInf} /uninstall /force", log);
+        }
+
         var hardwareId = ExtractExactHardwareId(instanceId);
         if (string.IsNullOrWhiteSpace(hardwareId))
         {
@@ -407,6 +414,27 @@ public sealed class DriverWorkflow : IDisposable
         log(rebootRequired
             ? "Display driver installed. Windows reports a reboot is required."
             : "Display driver installed.");
+    }
+
+    private static async Task<string?> GetActiveDisplayDriverInfNameAsync(string? instanceId)
+    {
+        if (string.IsNullOrWhiteSpace(instanceId))
+        {
+            return null;
+        }
+
+        var escapedInstanceId = instanceId.Replace("'", "''", StringComparison.Ordinal);
+        var output = await RunPowerShellAsync($$"""
+            $driver = Get-CimInstance Win32_PnPSignedDriver |
+              Where-Object { $_.DeviceClass -eq 'DISPLAY' -and $_.DeviceID -eq '{{escapedInstanceId}}' } |
+              Sort-Object DriverDate -Descending |
+              Select-Object -First 1
+            if ($driver -and $driver.InfName -match '^oem\d+\.inf$') {
+              [Console]::Out.WriteLine($driver.InfName)
+            }
+            """);
+        var match = Regex.Match(output, @"\boem\d+\.inf\b", RegexOptions.IgnoreCase);
+        return match.Success ? match.Value : null;
     }
 
     private async Task InstallBundledAudioAsync(bool serverCompatibility, Action<string> log)
