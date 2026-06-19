@@ -460,10 +460,18 @@
         <DockPanel Grid.Row="3" Margin="0,14,0,0" LastChildFill="False">
             <ProgressBar x:Name="Progress" DockPanel.Dock="Left" Width="280" Height="20" IsIndeterminate="False" Visibility="Hidden"/>
             <Button x:Name="InstallButton" DockPanel.Dock="Right" Width="135" Height="38" Content="Install" Click="InstallButton_Click"/>
-            <Button x:Name="ToggleMpoButton" DockPanel.Dock="Right" Width="135" Height="38" Margin="0,0,10,0" Content="Toggle MPO" Click="ToggleMpoButton_Click"/>
-            <TextBlock DockPanel.Dock="Right" Text="(?)" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" Margin="0,0,2,0" Cursor="Help" ToolTip="Enables or removes the MPO registry override. Restart or sign out/in after changing it."/>
-            <Button x:Name="UpdateCheckServiceButton" DockPanel.Dock="Right" Width="205" Height="38" Margin="0,0,10,0" Content="Install Update Check Service" Click="UpdateCheckServiceButton_Click"/>
-            <TextBlock DockPanel.Dock="Right" Text="(?)" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" Margin="0,0,2,0" Cursor="Help" ToolTip="Runs RadeonPatcher at startup and once every 24 hours to check for newer AMD drivers."/>
+            <Button x:Name="ToggleMpoButton" DockPanel.Dock="Right" Width="135" Height="38" Margin="0,0,10,0" Click="ToggleMpoButton_Click" ToolTip="Enables or removes the MPO registry override. Restart or sign out/in after changing it.">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                    <TextBlock x:Name="ToggleMpoButtonText" Text="Turn MPO Off"/>
+                    <TextBlock Text=" (?)" Foreground="{DynamicResource SecondaryTextBrush}"/>
+                </StackPanel>
+            </Button>
+            <Button x:Name="UpdateCheckServiceButton" DockPanel.Dock="Right" Width="205" Height="38" Margin="0,0,10,0" Click="UpdateCheckServiceButton_Click" ToolTip="Runs RadeonPatcher at startup and once every 24 hours to check for newer AMD drivers.">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                    <TextBlock x:Name="UpdateCheckServiceButtonText" Text="Install Update Check Service"/>
+                    <TextBlock Text=" (?)" Foreground="{DynamicResource SecondaryTextBrush}"/>
+                </StackPanel>
+            </Button>
         </DockPanel>
     </Grid>
 </Window>

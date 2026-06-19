@@ -54,7 +54,7 @@ public partial class MainWindow : Window
                 : $"Using detected AMD support page for {_hardware.GpuName}.";
             ServerCompatCheck.IsChecked = _hardware.IsServer;
             AudioCheck.IsChecked = _hardware.AudioDriverVersion is null || Version.Parse(_hardware.AudioDriverVersion) < Version.Parse("10.0.1.42");
-            UpdateCheckServiceButton.Content = _hardware.IsUpdateCheckServiceInstalled
+            UpdateCheckServiceButtonText.Text = _hardware.IsUpdateCheckServiceInstalled
                 ? "Uninstall Update Check Service"
                 : "Install Update Check Service";
             AdrenalinCheck.Content = _hardware.IsAdrenalinInstalled
@@ -148,7 +148,7 @@ public partial class MainWindow : Window
         {
             var installed = await _workflow.ToggleUpdateCheckServiceAsync(hardware.IsUpdateCheckServiceInstalled, Log);
             _hardware = hardware with { IsUpdateCheckServiceInstalled = installed };
-            UpdateCheckServiceButton.Content = installed
+            UpdateCheckServiceButtonText.Text = installed
                 ? "Uninstall Update Check Service"
                 : "Install Update Check Service";
         });
@@ -189,7 +189,7 @@ public partial class MainWindow : Window
             : "Install GPU Driver";
     }
 
-    private void UpdateMpoButtonText() => ToggleMpoButton.Content = _hardware?.IsMpoDisabled == true
+    private void UpdateMpoButtonText() => ToggleMpoButtonText.Text = _hardware?.IsMpoDisabled == true
         ? "Turn MPO On"
         : "Turn MPO Off";
 
