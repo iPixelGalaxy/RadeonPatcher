@@ -157,6 +157,7 @@ public partial class MainWindow : Window
     private async void InstallButton_Click(object sender, RoutedEventArgs e)
     {
         var installed = false;
+        InstallRequest? completedRequest = null;
         await Busy(async () =>
         {
             var hardware = _hardware ?? await _workflow.GetHardwareInfoAsync();
@@ -177,13 +178,41 @@ public partial class MainWindow : Window
 
             await _workflow.InstallAsync(request, Log);
             Log("Install workflow finished.");
+            completedRequest = request;
             installed = true;
         });
 
-        if (installed)
+        if (installed && completedRequest is not null)
         {
-            await RefreshAsync();
+            await RefreshAfterInstallAsync(completedRequest);
         }
+    }
+
+    private async Task RefreshAfterInstallAsync(InstallRequest request)
+    {
+        var expectDisplay = request.InstallDisplayDriver;
+        var expectAudio = request.AudioInstallSource != AudioInstallSource.None;
+        if (expectDisplay || expectAudio)
+        {
+            Log("Waiting for Windows to refresh installed driver information.");
+            await Busy(async () =>
+            {
+                for (var attempt = 0; attempt < 10; attempt++)
+                {
+                    await Task.Delay(1000);
+                    var hardware = await _workflow.GetHardwareInfoAsync();
+                    var displayReady = !expectDisplay || hardware.DisplayDriverVersion is not null;
+                    var audioReady = !expectAudio || hardware.AudioDriverVersion is not null;
+                    if (displayReady && audioReady)
+                    {
+                        break;
+                    }
+                }
+            });
+        }
+
+        Log("Refreshing installed driver versions.");
+        await RefreshAsync();
     }
 
     private async void UpdateCheckServiceButton_Click(object sender, RoutedEventArgs e)
