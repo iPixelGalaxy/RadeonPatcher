@@ -291,12 +291,7 @@ public partial class MainWindow : Window
         await RefreshAsync();
     }
 
-    private bool ConfirmUninstall(string message) => System.Windows.MessageBox.Show(
-        this,
-        message,
-        "RadeonPatcher",
-        MessageBoxButton.YesNo,
-        MessageBoxImage.Warning) == MessageBoxResult.Yes;
+    private bool ConfirmUninstall(string message) => AppDialog.Confirm(this, "Confirm removal", message);
 
     private async void ToggleMpoButton_Click(object sender, RoutedEventArgs e)
     {
@@ -310,7 +305,7 @@ public partial class MainWindow : Window
                 UpdateMpoButtonText();
             }
 
-            System.Windows.MessageBox.Show(this, message, "RadeonPatcher", MessageBoxButton.OK, MessageBoxImage.Information);
+            AppDialog.Show(this, "MPO setting changed", message);
         });
     }
 
@@ -441,7 +436,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             Log("ERROR: " + ex.Message);
-            System.Windows.MessageBox.Show(this, ex.Message, "RadeonPatcher", MessageBoxButton.OK, MessageBoxImage.Error);
+            AppDialog.ShowError(this, "Operation failed", ex.Message);
         }
         finally
         {
@@ -516,22 +511,29 @@ public partial class MainWindow : Window
     private void ApplyTheme()
     {
         var dark = IsDarkTheme();
-        Resources["WindowBackgroundBrush"] = Brush(dark ? "#202226" : "#F3F5F7");
-        Resources["PanelBackgroundBrush"] = Brush(dark ? "#2B2E33" : "#FFFFFF");
-        Resources["PanelBorderBrush"] = Brush(dark ? "#444A53" : "#D7DEE7");
-        Resources["PrimaryTextBrush"] = Brush(dark ? "#ECEFF3" : "#1F2933");
-        Resources["SecondaryTextBrush"] = Brush(dark ? "#B7C0CA" : "#52606D");
-        Resources["InputBackgroundBrush"] = Brush(dark ? "#343840" : "#FFFFFF");
-        Resources["InputBorderBrush"] = Brush(dark ? "#59616C" : "#BAC5D1");
-        Resources["ButtonBackgroundBrush"] = Brush(dark ? "#3A4049" : "#E8EEF5");
-        Resources["ButtonForegroundBrush"] = Brush(dark ? "#F2F5F8" : "#1F2933");
-        Resources["LogBackgroundBrush"] = Brush(dark ? "#24272D" : "#FFFFFF");
-        Resources["LogForegroundBrush"] = Brush(dark ? "#E5EAF0" : "#1F2933");
-        Resources["LogoBrush"] = Brush(dark ? "#F05A48" : "#D93626");
-        Resources["SelectionBackgroundBrush"] = Brush(dark ? "#46505C" : "#DCE7F3");
-        Resources["ScrollTrackBrush"] = Brush(dark ? "#24272D" : "#E6EBF1");
-        Resources["ScrollThumbBrush"] = Brush(dark ? "#586270" : "#A9B5C2");
-        Resources["ScrollThumbHoverBrush"] = Brush(dark ? "#6B7685" : "#8795A5");
+        SetThemeBrush("WindowBackgroundBrush", dark ? "#202226" : "#F3F5F7");
+        SetThemeBrush("PanelBackgroundBrush", dark ? "#2B2E33" : "#FFFFFF");
+        SetThemeBrush("PanelBorderBrush", dark ? "#444A53" : "#D7DEE7");
+        SetThemeBrush("PrimaryTextBrush", dark ? "#ECEFF3" : "#1F2933");
+        SetThemeBrush("SecondaryTextBrush", dark ? "#B7C0CA" : "#52606D");
+        SetThemeBrush("InputBackgroundBrush", dark ? "#343840" : "#FFFFFF");
+        SetThemeBrush("InputBorderBrush", dark ? "#59616C" : "#BAC5D1");
+        SetThemeBrush("ButtonBackgroundBrush", dark ? "#3A4049" : "#E8EEF5");
+        SetThemeBrush("ButtonForegroundBrush", dark ? "#F2F5F8" : "#1F2933");
+        SetThemeBrush("LogBackgroundBrush", dark ? "#24272D" : "#FFFFFF");
+        SetThemeBrush("LogForegroundBrush", dark ? "#E5EAF0" : "#1F2933");
+        SetThemeBrush("LogoBrush", dark ? "#F05A48" : "#D93626");
+        SetThemeBrush("SelectionBackgroundBrush", dark ? "#46505C" : "#DCE7F3");
+        SetThemeBrush("ScrollTrackBrush", dark ? "#24272D" : "#E6EBF1");
+        SetThemeBrush("ScrollThumbBrush", dark ? "#586270" : "#A9B5C2");
+        SetThemeBrush("ScrollThumbHoverBrush", dark ? "#6B7685" : "#8795A5");
+    }
+
+    private void SetThemeBrush(string key, string color)
+    {
+        var brush = Brush(color);
+        Resources[key] = brush;
+        System.Windows.Application.Current.Resources[key] = brush;
     }
 
     private void ApplyTitleBarTheme()

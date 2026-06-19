@@ -53,7 +53,7 @@ public partial class App : System.Windows.Application
         }
         catch (Exception ex)
         {
-            System.Windows.MessageBox.Show(owner, $"RadeonPatcher could not install the update.\n\n{ex.Message}", "RadeonPatcher Update", MessageBoxButton.OK, MessageBoxImage.Error);
+            AppDialog.ShowError(owner, "Update failed", $"RadeonPatcher could not install the update.\n\n{ex.Message}");
         }
     }
 

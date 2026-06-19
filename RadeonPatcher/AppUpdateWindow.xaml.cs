@@ -11,6 +11,7 @@ public partial class AppUpdateWindow : Window
         InitializeComponent();
         CurrentVersionText.Text = Format(update.CurrentVersion);
         LatestVersionText.Text = Format(update.LatestVersion);
+        SourceInitialized += (_, _) => DialogTheme.ApplyTitleBar(this);
     }
 
     private void UpdateButton_Click(object sender, RoutedEventArgs e)

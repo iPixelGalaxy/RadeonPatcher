@@ -1,9 +1,10 @@
 <Window x:Class="RadeonPatcher.AppUpdateWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="RadeonPatcher Update" Width="430" Height="230"
-        WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False">
-    <Grid Margin="24">
+        Title="RadeonPatcher Update" Width="450" Height="250"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False"
+        Icon="Resources/AMDSoftwareConsumer.ico" Background="{DynamicResource WindowBackgroundBrush}">
+    <Grid Margin="24,22">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -11,19 +12,22 @@
         </Grid.RowDefinitions>
         <TextBlock FontSize="20" FontWeight="SemiBold" Text="RadeonPatcher update available"/>
         <StackPanel Grid.Row="1" Margin="0,18,0,18">
-            <TextBlock Text="A newer verified GitHub release is available." Margin="0,0,0,12"/>
-            <Grid>
+            <TextBlock Foreground="{DynamicResource SecondaryTextBrush}" Text="A newer verified GitHub release is available." Margin="0,0,0,14"/>
+            <Grid Background="{DynamicResource PanelBackgroundBrush}">
+                <Grid.Resources>
+                    <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}"/>
+                </Grid.Resources>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
-                <StackPanel>
-                    <TextBlock Foreground="Gray" Text="Current version"/>
-                    <TextBlock x:Name="CurrentVersionText" FontWeight="SemiBold"/>
+                <StackPanel Margin="12,10">
+                    <TextBlock Foreground="{DynamicResource SecondaryTextBrush}" Text="Current version"/>
+                    <TextBlock x:Name="CurrentVersionText" Margin="0,3,0,0" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource PrimaryTextBrush}"/>
                 </StackPanel>
-                <StackPanel Grid.Column="1">
-                    <TextBlock Foreground="Gray" Text="Available version"/>
-                    <TextBlock x:Name="LatestVersionText" FontWeight="SemiBold"/>
+                <StackPanel Grid.Column="1" Margin="12,10">
+                    <TextBlock Foreground="{DynamicResource SecondaryTextBrush}" Text="Available version"/>
+                    <TextBlock x:Name="LatestVersionText" Margin="0,3,0,0" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource LogoBrush}"/>
                 </StackPanel>
             </Grid>
         </StackPanel>
