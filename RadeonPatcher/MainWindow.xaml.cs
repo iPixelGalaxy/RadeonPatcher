@@ -184,10 +184,17 @@ public partial class MainWindow : Window
 
         SelectedDriverText.Text = $"{driver.ReleaseDateText}  {driver.FileSizeText}";
         var currentVersion = _hardware?.DisplayDriverPackageVersion;
-        InstallDisplayDriverCheck.Content = !string.IsNullOrWhiteSpace(currentVersion) &&
-            string.Equals(driver.VersionText, currentVersion, StringComparison.OrdinalIgnoreCase)
-            ? "Reinstall GPU Driver"
-            : "Install GPU Driver";
+        if (Version.TryParse(driver.VersionText, out var selected) && Version.TryParse(currentVersion, out var current))
+        {
+            InstallDisplayDriverCheck.Content = selected > current
+                ? "Update GPU Driver"
+                : selected < current
+                    ? "Downgrade GPU Driver"
+                    : "Reinstall GPU Driver";
+            return;
+        }
+
+        InstallDisplayDriverCheck.Content = "Install GPU Driver";
     }
 
     private void UpdateMpoButtonText() => ToggleMpoButtonText.Text = _hardware?.IsMpoDisabled == true
@@ -221,6 +228,7 @@ public partial class MainWindow : Window
         InstallButton.IsEnabled = !busy;
         ToggleMpoButton.IsEnabled = !busy;
         UpdateCheckServiceButton.IsEnabled = !busy;
+        InstallOptionsPanel.Visibility = busy ? Visibility.Hidden : Visibility.Visible;
     }
 
     private void Log(string message)
