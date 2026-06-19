@@ -458,8 +458,7 @@
                 </Grid.ColumnDefinitions>
                 <Grid Grid.Column="0" Margin="0,0,18,0">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" MinWidth="185"/>
-                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     <Grid.RowDefinitions>
@@ -469,15 +468,9 @@
                     </Grid.RowDefinitions>
                     <TextBlock FontWeight="SemiBold" Text="Detected hardware"/>
                     <TextBlock x:Name="GpuText" Grid.Row="1" Margin="0,8,0,0" TextWrapping="Wrap"/>
-                    <Button x:Name="RefreshButton" Grid.Column="1" Grid.RowSpan="2" Width="130" Height="34" Margin="12,0,0,0" Content="Refresh" Click="RefreshButton_Click"/>
-                    <Grid Grid.Row="2" Grid.ColumnSpan="3" Margin="0,8,0,0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock x:Name="DisplayDriverText" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
-                        <TextBlock x:Name="AudioText" Grid.Column="1" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
-                    </Grid>
+                    <Button x:Name="RefreshButton" Grid.Column="1" Grid.RowSpan="2" Width="130" Height="34" HorizontalAlignment="Left" Content="Refresh" Click="RefreshButton_Click"/>
+                    <TextBlock x:Name="DisplayDriverText" Grid.Row="2" Margin="0,8,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
+                    <TextBlock x:Name="AudioText" Grid.Row="2" Grid.Column="1" Margin="0,8,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
                 </Grid>
                 <StackPanel Grid.Column="1">
                     <TextBlock FontWeight="SemiBold" Text="System"/>
@@ -533,7 +526,16 @@
                             <TextBlock x:Name="AudioInstalledHint" Text=" (?)" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" Cursor="Help" ToolTip="AMD HD Audio Driver is already installed." Visibility="Collapsed"/>
                         </StackPanel>
                         <CheckBox x:Name="AutoClearDownloadCacheCheck" Content="Auto Clear Downloaded Cache" IsChecked="True" Margin="0,0,0,10"/>
-                        <Button x:Name="UninstallDriverButton" Height="34" Margin="0,4,0,0" Content="Uninstall Driver &amp; Software" Click="UninstallDriverButton_Click"/>
+                        <Grid Margin="0,4,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="UninstallGpuDriverButton" Height="34" Margin="0,0,5,0" Content="Uninstall GPU Driver" Click="UninstallGpuDriverButton_Click"/>
+                            <Button x:Name="UninstallAudioDriverButton" Grid.Column="1" Height="34" Margin="5,0,0,0" Content="Uninstall HD Audio Driver" Click="UninstallAudioDriverButton_Click"/>
+                        </Grid>
+                        <Button x:Name="UninstallAdrenalinButton" Height="34" Margin="0,0,0,10" Content="Uninstall AMD Software" Click="UninstallAdrenalinButton_Click"/>
+                        <Button x:Name="UninstallAllButton" Height="34" Content="Uninstall All Drivers &amp; AMD Software" Click="UninstallAllButton_Click"/>
                     </StackPanel>
                 </StackPanel>
             </Border>

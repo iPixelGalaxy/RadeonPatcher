@@ -17,6 +17,10 @@ public partial class MainWindow : Window
     private AppThemeMode _themeMode = AppThemeMode.System;
     private bool _applyingSettings;
     private bool _updatingOptions;
+    private bool _hasDownloadCache;
+    private bool _canUninstallGpuDriver;
+    private bool _canUninstallAudioDriver;
+    private bool _canUninstallAdrenalin;
 
     public MainWindow()
     {
@@ -39,6 +43,10 @@ public partial class MainWindow : Window
             var payloadTask = _workflow.EnsurePayloadsAsync();
             await Task.WhenAll(hardwareTask, payloadTask);
             _hardware = await hardwareTask;
+            _hasDownloadCache = _workflow.HasDownloadCache();
+            _canUninstallGpuDriver = !string.IsNullOrWhiteSpace(_hardware.DisplayDriverOriginalInf);
+            _canUninstallAudioDriver = _hardware.AudioDriverVersion is not null;
+            _canUninstallAdrenalin = _hardware.IsAdrenalinInstalled;
 
             GpuText.Text = _hardware.GpuName ?? "No AMD display adapter detected.";
             DisplayDriverText.Text = _hardware.DisplayDriverPackageVersion is null
@@ -182,8 +190,12 @@ public partial class MainWindow : Window
         });
     }
 
-    private async void ClearDownloadCacheButton_Click(object sender, RoutedEventArgs e) =>
+    private async void ClearDownloadCacheButton_Click(object sender, RoutedEventArgs e)
+    {
         await Busy(() => _workflow.ClearDownloadCacheAsync(Log));
+        _hasDownloadCache = false;
+        SetBusy(false);
+    }
 
     private async void RemoveAdrenalinButton_Click(object sender, RoutedEventArgs e)
     {
@@ -200,15 +212,46 @@ public partial class MainWindow : Window
         });
     }
 
-    private async void UninstallDriverButton_Click(object sender, RoutedEventArgs e)
+    private async void UninstallGpuDriverButton_Click(object sender, RoutedEventArgs e)
     {
-        var confirmation = System.Windows.MessageBox.Show(
-            this,
-            "This removes the active AMD display driver and AMD Software: Adrenalin Edition. Windows may temporarily use Microsoft Basic Display Adapter.",
-            "RadeonPatcher",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning);
-        if (confirmation != MessageBoxResult.Yes)
+        if (!ConfirmUninstall("This removes the active AMD display driver. Windows may temporarily use Microsoft Basic Display Adapter."))
+        {
+            return;
+        }
+
+        await Busy(async () =>
+        {
+            await _workflow.UninstallDisplayDriverAsync(_hardware ?? await _workflow.GetHardwareInfoAsync(), Log);
+            Log("AMD display driver removal finished.");
+        });
+        await RefreshAsync();
+    }
+
+    private async void UninstallAudioDriverButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!ConfirmUninstall("This removes the active AMD HD Audio driver."))
+        {
+            return;
+        }
+
+        await Busy(() => _workflow.UninstallAudioDriverAsync(Log));
+        await RefreshAsync();
+    }
+
+    private async void UninstallAdrenalinButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!ConfirmUninstall("This removes AMD Software: Adrenalin Edition and keeps the display driver installed."))
+        {
+            return;
+        }
+
+        await Busy(() => _workflow.RemoveAdrenalinAsync(Log));
+        await RefreshAsync();
+    }
+
+    private async void UninstallAllButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!ConfirmUninstall("This removes active AMD display and HD Audio drivers plus AMD Software: Adrenalin Edition. Windows may temporarily use Microsoft Basic Display Adapter."))
         {
             return;
         }
@@ -216,10 +259,21 @@ public partial class MainWindow : Window
         await Busy(async () =>
         {
             await _workflow.UninstallDriverAndSoftwareAsync(_hardware ?? await _workflow.GetHardwareInfoAsync(), Log);
+            if (_canUninstallAudioDriver)
+            {
+                await _workflow.UninstallAudioDriverAsync(Log);
+            }
             Log("AMD driver and software removal finished.");
         });
         await RefreshAsync();
     }
+
+    private bool ConfirmUninstall(string message) => System.Windows.MessageBox.Show(
+        this,
+        message,
+        "RadeonPatcher",
+        MessageBoxButton.YesNo,
+        MessageBoxImage.Warning) == MessageBoxResult.Yes;
 
     private async void ToggleMpoButton_Click(object sender, RoutedEventArgs e)
     {
@@ -377,13 +431,16 @@ public partial class MainWindow : Window
         Progress.Visibility = busy ? Visibility.Visible : Visibility.Hidden;
         Progress.IsIndeterminate = busy;
         RefreshButton.IsEnabled = !busy;
-        ClearDownloadCacheButton.IsEnabled = !busy;
+        ClearDownloadCacheButton.IsEnabled = !busy && _hasDownloadCache;
         ThemeCombo.IsEnabled = !busy;
         InstallButton.IsEnabled = !busy;
         ToggleMpoButton.IsEnabled = !busy;
         UpdateCheckServiceButton.IsEnabled = !busy;
         RemoveAdrenalinButton.IsEnabled = !busy;
-        UninstallDriverButton.IsEnabled = !busy;
+        UninstallGpuDriverButton.IsEnabled = !busy && _canUninstallGpuDriver;
+        UninstallAudioDriverButton.IsEnabled = !busy && _canUninstallAudioDriver;
+        UninstallAdrenalinButton.IsEnabled = !busy && _canUninstallAdrenalin;
+        UninstallAllButton.IsEnabled = !busy && (_canUninstallGpuDriver || _canUninstallAudioDriver || _canUninstallAdrenalin);
         InstallOptionsPanel.Visibility = busy ? Visibility.Hidden : Visibility.Visible;
     }
 
