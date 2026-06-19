@@ -53,7 +53,8 @@ public partial class MainWindow : Window
                 ? "No mapped AMD support page was found. Enter a custom AMD support URL."
                 : $"Using detected AMD support page for {_hardware.GpuName}.";
             ServerCompatCheck.IsChecked = _hardware.IsServer;
-            AudioCheck.IsChecked = _hardware.AudioDriverVersion is null || Version.Parse(_hardware.AudioDriverVersion) < Version.Parse("10.0.1.42");
+            AudioCheck.IsChecked = _hardware.AudioDriverVersion is null;
+            AudioCheck.Visibility = _hardware.AudioDriverVersion is null ? Visibility.Visible : Visibility.Collapsed;
             UpdateCheckServiceButtonText.Text = _hardware.IsUpdateCheckServiceInstalled
                 ? "Uninstall Update Check Service"
                 : "Install Update Check Service";
