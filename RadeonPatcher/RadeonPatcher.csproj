@@ -20,12 +20,24 @@
     <Description>Independent Radeon driver installer and compatibility patcher.</Description>
     <Authors>RadeonPatcher contributors</Authors>
     <Copyright>Copyright © RadeonPatcher contributors</Copyright>
+    <UpdateCheckerPublishDir>$(BaseIntermediateOutputPath)update-checker\</UpdateCheckerPublishDir>
   </PropertyGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="Resources\Tools\**\*" LogicalName="Tools\%(RecursiveDir)%(Filename)%(Extension)" />
     <EmbeddedResource Include="Resources\BundledAudio\**\*" LogicalName="BundledAudio\%(RecursiveDir)%(Filename)%(Extension)" />
+    <EmbeddedResource Include="$(UpdateCheckerPublishDir)RadeonPatcherUpdateCheck.exe"
+                      LogicalName="UpdateChecker\RadeonPatcherUpdateCheck.exe" />
   </ItemGroup>
+
+  <Target Name="BuildUpdateChecker" BeforeTargets="PrepareResources">
+    <MSBuild Projects="..\RadeonPatcher.UpdateCheck\RadeonPatcher.UpdateCheck.csproj"
+             Targets="Restore"
+             Properties="Configuration=$(Configuration);RuntimeIdentifier=win-x64" />
+    <MSBuild Projects="..\RadeonPatcher.UpdateCheck\RadeonPatcher.UpdateCheck.csproj"
+             Targets="Publish"
+             Properties="Configuration=$(Configuration);RuntimeIdentifier=win-x64;SelfContained=true;PublishAot=true;UseAppHost=true;PublishDir=$(MSBuildProjectDirectory)\$(UpdateCheckerPublishDir)" />
+  </Target>
 
   <ItemGroup>
     <Resource Include="Resources\AMDSoftwareConsumer.ico" />

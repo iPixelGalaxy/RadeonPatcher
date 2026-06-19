@@ -561,7 +561,7 @@
             <ProgressBar x:Name="Progress" DockPanel.Dock="Left" Width="120" Height="20" IsIndeterminate="False" Visibility="Hidden" Style="{StaticResource AppProgressBar}"/>
             <Button x:Name="InstallButton" DockPanel.Dock="Right" Width="135" Height="38" Content="Install" Click="InstallButton_Click"/>
             <Button x:Name="RemoveAdrenalinButton" DockPanel.Dock="Right" Width="270" Height="38" Margin="0,0,10,0" Content="Remove AMD Software: Adrenalin Edition" Click="RemoveAdrenalinButton_Click" Visibility="Collapsed"/>
-            <Button x:Name="ToggleMpoButton" DockPanel.Dock="Right" Width="135" Height="38" Margin="0,0,10,0" Click="ToggleMpoButton_Click" ToolTip="Enables or removes the MPO registry override. Restart or sign out/in after changing it.">
+            <Button x:Name="ToggleMpoButton" DockPanel.Dock="Right" Width="135" Height="38" Margin="0,0,10,0" Click="ToggleMpoButton_Click" ToolTip="Enables or removes the MPO registry override. Restart or sign out/in after changing it. MPO Off is Recommended.">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                     <TextBlock x:Name="ToggleMpoButtonText" Text="Turn MPO Off"/>
                     <TextBlock Text=" (?)" Foreground="{DynamicResource SecondaryTextBrush}"/>

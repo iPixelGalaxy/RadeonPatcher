@@ -60,6 +60,7 @@ public sealed class DriverWorkflow : IDisposable
 
     public string WorkRoot { get; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "RadeonPatcher");
     private string ToolsRoot => Path.Combine(WorkRoot, "tools");
+    private string UpdateCheckerRoot => Path.Combine(WorkRoot, "update-checker");
     private string AudioPayloadRoot => Path.Combine(WorkRoot, "bundled-audio");
     private string DownloadsRoot => Path.Combine(WorkRoot, "downloads");
     private string ExtractedRoot => Path.Combine(WorkRoot, "extracted");
@@ -74,6 +75,7 @@ public sealed class DriverWorkflow : IDisposable
     public async Task EnsurePayloadsAsync()
     {
         Directory.CreateDirectory(ToolsRoot);
+        Directory.CreateDirectory(UpdateCheckerRoot);
         Directory.CreateDirectory(AudioPayloadRoot);
         Directory.CreateDirectory(DownloadsRoot);
         Directory.CreateDirectory(ExtractedRoot);
@@ -81,6 +83,7 @@ public sealed class DriverWorkflow : IDisposable
 
         await ExtractEmbeddedFolderAsync("Tools\\", ToolsRoot);
         await ExtractEmbeddedFolderAsync("BundledAudio\\", AudioPayloadRoot);
+        await ExtractEmbeddedFolderAsync("UpdateChecker\\", UpdateCheckerRoot);
     }
 
     public async Task<HardwareInfo> GetHardwareInfoAsync()
@@ -107,7 +110,7 @@ public sealed class DriverWorkflow : IDisposable
             $mpoDisabled = $false
             try { $mpoDisabled = ((Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\Dwm' -ErrorAction SilentlyContinue).OverlayTestMode -eq 5) } catch {}
             $updateCheckInstalled = $null -ne (Get-ScheduledTask -TaskName 'RadeonPatcher Update Check' -ErrorAction SilentlyContinue)
-            $adrenalinInstalled = Test-Path -LiteralPath 'C:\Program Files\AMD\CNext\CNext\RSServCmd.exe'
+            $adrenalinInstalled = Test-Path -LiteralPath 'C:\Program Files\AMD\CNext\CNext\RadeonSoftware.exe'
             $originalInf = $null
             if ($gpu.Service) {
               $service = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\$($gpu.Service)" -ErrorAction SilentlyContinue
@@ -266,6 +269,33 @@ public sealed class DriverWorkflow : IDisposable
         return true;
     }
 
+    public async Task EnsureUpdateCheckServiceCurrentAsync(Action<string> log)
+    {
+        var helperExe = Path.Combine(UpdateCheckerRoot, "RadeonPatcherUpdateCheck.exe");
+        var serviceExe = Path.Combine(WorkRoot, "RadeonPatcherUpdateCheck.exe");
+        if (!File.Exists(helperExe))
+        {
+            return;
+        }
+
+        byte[] current = [];
+        if (File.Exists(serviceExe))
+        {
+            using var currentStream = File.OpenRead(serviceExe);
+            current = SHA256.HashData(currentStream);
+        }
+
+        using var expectedStream = File.OpenRead(helperExe);
+        var expected = SHA256.HashData(expectedStream);
+        if (current.AsSpan().SequenceEqual(expected))
+        {
+            return;
+        }
+
+        log("Updating installed update checker helper.");
+        await InstallUpdateCheckServiceAsync(log);
+    }
+
     public async Task RemoveAdrenalinAsync(Action<string> log)
     {
         await BackupAdrenalinSettingsAsync(log);
@@ -317,7 +347,7 @@ public sealed class DriverWorkflow : IDisposable
 
     private async Task RemoveAdrenalinCoreAsync(Action<string> log)
     {
-        if (!File.Exists(@"C:\Program Files\AMD\CNext\CNext\RSServCmd.exe"))
+        if (!File.Exists(@"C:\Program Files\AMD\CNext\CNext\RadeonSoftware.exe"))
         {
             throw new InvalidOperationException("AMD Software: Adrenalin Edition is not installed.");
         }
@@ -416,7 +446,7 @@ public sealed class DriverWorkflow : IDisposable
 
     private static (string FileName, string Arguments)? FindAdrenalinUninstallCommand()
     {
-        if (!File.Exists(@"C:\Program Files\AMD\CNext\CNext\RSServCmd.exe"))
+        if (!File.Exists(@"C:\Program Files\AMD\CNext\CNext\RadeonSoftware.exe"))
         {
             return null;
         }
@@ -490,14 +520,20 @@ public sealed class DriverWorkflow : IDisposable
         Directory.CreateDirectory(WorkRoot);
         var processPath = Environment.ProcessPath ?? throw new InvalidOperationException("Could not determine the current executable path.");
         var serviceExe = Path.Combine(WorkRoot, "RadeonPatcherUpdateCheck.exe");
-        File.Copy(processPath, serviceExe, true);
+        var helperExe = Path.Combine(UpdateCheckerRoot, "RadeonPatcherUpdateCheck.exe");
+        if (!File.Exists(helperExe))
+        {
+            throw new FileNotFoundException("Embedded update checker was not extracted.", helperExe);
+        }
+        File.Copy(helperExe, serviceExe, true);
 
         var startTime = DateTime.Now.AddMinutes(10).ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
         var script = $$"""
             $ErrorActionPreference = 'Stop'
             $taskName = 'RadeonPatcher Update Check'
             $exe = '{{serviceExe.Replace("'", "''")}}'
-            $action = New-ScheduledTaskAction -Execute $exe -Argument '--check-updates'
+            $app = '{{processPath.Replace("'", "''")}}'
+            $action = New-ScheduledTaskAction -Execute $exe -Argument ('"' + $app + '"')
             $triggers = @()
             $triggers += New-ScheduledTaskTrigger -AtStartup
             $triggers += New-ScheduledTaskTrigger -Daily -At '{{startTime}}'

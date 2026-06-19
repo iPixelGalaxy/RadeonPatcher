@@ -43,6 +43,10 @@ public partial class MainWindow : Window
             var payloadTask = _workflow.EnsurePayloadsAsync();
             await Task.WhenAll(hardwareTask, payloadTask);
             _hardware = await hardwareTask;
+            if (_hardware.IsUpdateCheckServiceInstalled)
+            {
+                await _workflow.EnsureUpdateCheckServiceCurrentAsync(Log);
+            }
             _hasDownloadCache = _workflow.HasDownloadCache();
             _canUninstallGpuDriver = !string.IsNullOrWhiteSpace(_hardware.DisplayDriverOriginalInf);
             _canUninstallAudioDriver = _hardware.AudioDriverVersion is not null;
