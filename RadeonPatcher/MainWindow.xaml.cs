@@ -55,8 +55,8 @@ public partial class MainWindow : Window
             ServerCompatCheck.IsChecked = _hardware.IsServer;
             AudioCheck.IsChecked = _hardware.AudioDriverVersion is null || Version.Parse(_hardware.AudioDriverVersion) < Version.Parse("10.0.1.42");
             UpdateCheckServiceButton.Content = _hardware.IsUpdateCheckServiceInstalled
-                ? "Uninstall Update Service"
-                : "Install Update Service";
+                ? "Uninstall Update Check Service"
+                : "Install Update Check Service";
             AdrenalinCheck.Content = _hardware.IsAdrenalinInstalled
                 ? "Reinstall AMD Software: Adrenalin Edition"
                 : "Install AMD Software: Adrenalin Edition";
@@ -148,8 +148,8 @@ public partial class MainWindow : Window
             var installed = await _workflow.ToggleUpdateCheckServiceAsync(hardware.IsUpdateCheckServiceInstalled, Log);
             _hardware = hardware with { IsUpdateCheckServiceInstalled = installed };
             UpdateCheckServiceButton.Content = installed
-                ? "Uninstall Update Service"
-                : "Install Update Service";
+                ? "Uninstall Update Check Service"
+                : "Install Update Check Service";
         });
     }
 
