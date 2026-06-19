@@ -62,6 +62,7 @@ public sealed class DriverWorkflow : IDisposable
     private string DownloadsRoot => Path.Combine(WorkRoot, "downloads");
     private string ExtractedRoot => Path.Combine(WorkRoot, "extracted");
     private string PatchedRoot => Path.Combine(WorkRoot, "patched");
+    private string AdrenalinBackupRoot => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RadeonPatcher", "adrenalin-backup");
 
     public DriverWorkflow()
     {
@@ -226,6 +227,31 @@ public sealed class DriverWorkflow : IDisposable
 
     public async Task RemoveAdrenalinAsync(Action<string> log)
     {
+        await BackupAdrenalinSettingsAsync(log);
+        await RemoveAdrenalinCoreAsync(log);
+    }
+
+    public async Task UninstallDriverAndSoftwareAsync(HardwareInfo hardware, Action<string> log)
+    {
+        await BackupAdrenalinSettingsAsync(log);
+        if (FindAdrenalinUninstallCommand() is not null)
+        {
+            await RemoveAdrenalinCoreAsync(log);
+        }
+
+        var activeInf = await GetActiveDisplayDriverInfNameAsync(hardware.GpuInstanceId);
+        if (string.IsNullOrWhiteSpace(activeInf))
+        {
+            log("No active AMD display driver package was found.");
+            return;
+        }
+
+        log($"Removing active display driver package: {activeInf}");
+        await RunProcessAsync("pnputil.exe", $"/delete-driver {activeInf} /uninstall /force", log);
+    }
+
+    private async Task RemoveAdrenalinCoreAsync(Action<string> log)
+    {
         if (!File.Exists(@"C:\Program Files\AMD\CNext\CNext\RSServCmd.exe"))
         {
             throw new InvalidOperationException("AMD Software: Adrenalin Edition is not installed.");
@@ -240,6 +266,87 @@ public sealed class DriverWorkflow : IDisposable
         log("Removing AMD Software: Adrenalin Edition.");
         await RunProcessAsync(uninstall.Value.FileName, uninstall.Value.Arguments, log);
         log("AMD Software: Adrenalin Edition removed.");
+    }
+
+    private async Task BackupAdrenalinSettingsAsync(Action<string> log)
+    {
+        var backupRoot = AdrenalinBackupRoot.Replace("'", "''", StringComparison.Ordinal);
+        var script = $$"""
+            $ErrorActionPreference = 'Stop'
+            $backupRoot = '{{backupRoot}}'
+            New-Item -ItemType Directory -Path $backupRoot -Force | Out-Null
+            $userSettings = Join-Path $backupRoot 'amd-user-settings.reg'
+            if (Test-Path 'Registry::HKEY_CURRENT_USER\Software\AMD') {
+              & reg.exe export 'HKCU\Software\AMD' $userSettings /y | Out-Null
+              if ($LASTEXITCODE -ne 0) { throw 'Could not export AMD user settings.' }
+            }
+            $gpu = Get-CimInstance Win32_PnPEntity | Where-Object { $_.PNPDeviceID -match 'VEN_1002' -and $_.PNPClass -eq 'Display' } | Select-Object -First 1
+            $videoId = $null
+            if ($gpu.Service) {
+              $videoId = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\$($gpu.Service)\Video" -ErrorAction SilentlyContinue).VideoID
+            }
+            $entries = @()
+            if ($videoId) {
+              $videoRoot = "HKLM:\SYSTEM\CurrentControlSet\Control\Video\$videoId"
+              Get-ChildItem $videoRoot -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -match '^\d{4}$' } | ForEach-Object {
+                foreach ($name in 'DAL2_DATA__2_0','DAL3_DATA','UMD') {
+                  $source = "$($_.PSPath)\$name"
+                  if (Test-Path $source) {
+                    $file = "adapter-$($_.PSChildName)-$name.reg"
+                    $registryPath = "HKLM\SYSTEM\CurrentControlSet\Control\Video\$videoId\$($_.PSChildName)\$name"
+                    & reg.exe export $registryPath (Join-Path $backupRoot $file) /y | Out-Null
+                    if ($LASTEXITCODE -eq 0) { $entries += $file }
+                  }
+                }
+              }
+            }
+            [pscustomobject]@{ VideoId = $videoId; AdapterFiles = $entries } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $backupRoot 'adapter-settings.json') -Encoding UTF8
+            """;
+        log("Backing up AMD preferences and custom display settings.");
+        await RunPowerShellAsync(script);
+        log("AMD settings backup saved.");
+    }
+
+    private async Task RestoreAdrenalinSettingsAsync(Action<string> log)
+    {
+        var backupRoot = AdrenalinBackupRoot.Replace("'", "''", StringComparison.Ordinal);
+        var script = $$"""
+            $ErrorActionPreference = 'Stop'
+            $backupRoot = '{{backupRoot}}'
+            $userSettings = Join-Path $backupRoot 'amd-user-settings.reg'
+            if (Test-Path $userSettings) {
+              & reg.exe import $userSettings | Out-Null
+              if ($LASTEXITCODE -ne 0) { throw 'Could not restore AMD user settings.' }
+            }
+            $manifestPath = Join-Path $backupRoot 'adapter-settings.json'
+            if (-not (Test-Path $manifestPath)) { return }
+            $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+            if (-not $manifest.VideoId -or -not $manifest.AdapterFiles) { return }
+            $gpu = Get-CimInstance Win32_PnPEntity | Where-Object { $_.PNPDeviceID -match 'VEN_1002' -and $_.PNPClass -eq 'Display' } | Select-Object -First 1
+            $newVideoId = $null
+            if ($gpu.Service) {
+              $newVideoId = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\$($gpu.Service)\Video" -ErrorAction SilentlyContinue).VideoID
+            }
+            if (-not $newVideoId) { return }
+            foreach ($file in @($manifest.AdapterFiles)) {
+              $source = Join-Path $backupRoot $file
+              if (-not (Test-Path $source)) { continue }
+              $content = [IO.File]::ReadAllText($source)
+              $temp = Join-Path $env:TEMP ("RadeonPatcher-restore-" + $file)
+              [IO.File]::WriteAllText($temp, $content.Replace($manifest.VideoId, $newVideoId), [Text.Encoding]::Unicode)
+              & reg.exe import $temp | Out-Null
+              Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue
+              if ($LASTEXITCODE -ne 0) { throw "Could not restore AMD display settings from $file." }
+            }
+            """;
+        if (!Directory.Exists(AdrenalinBackupRoot))
+        {
+            return;
+        }
+
+        log("Restoring saved AMD preferences and custom display settings.");
+        await RunPowerShellAsync(script);
+        log("AMD settings restored.");
     }
 
     private static (string FileName, string Arguments)? FindAdrenalinUninstallCommand()
@@ -578,11 +685,13 @@ public sealed class DriverWorkflow : IDisposable
         {
             log($"Installing Adrenalin MSI: {msi}");
             await RunProcessAsync("msiexec.exe", $"/i \"{msi}\" /qn /norestart", log);
+            await RestoreAdrenalinSettingsAsync(log);
             return;
         }
 
         log("Falling back to direct ccc2_install.exe execution.");
         await RunProcessAsync(installer, "", log, throwOnError: false);
+        await RestoreAdrenalinSettingsAsync(log);
     }
 
     private async Task SignPackageAsync(string packageDirectory, string infPath, Action<string> log)

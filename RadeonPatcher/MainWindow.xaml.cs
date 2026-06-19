@@ -192,6 +192,27 @@ public partial class MainWindow : Window
         });
     }
 
+    private async void UninstallDriverButton_Click(object sender, RoutedEventArgs e)
+    {
+        var confirmation = System.Windows.MessageBox.Show(
+            this,
+            "This removes the active AMD display driver and AMD Software: Adrenalin Edition. Windows may temporarily use Microsoft Basic Display Adapter.",
+            "RadeonPatcher",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+        if (confirmation != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        await Busy(async () =>
+        {
+            await _workflow.UninstallDriverAndSoftwareAsync(_hardware ?? await _workflow.GetHardwareInfoAsync(), Log);
+            Log("AMD driver and software removal finished.");
+        });
+        await RefreshAsync();
+    }
+
     private async void ToggleMpoButton_Click(object sender, RoutedEventArgs e)
     {
         var disable = _hardware?.IsMpoDisabled != true;
@@ -349,6 +370,7 @@ public partial class MainWindow : Window
         ToggleMpoButton.IsEnabled = !busy;
         UpdateCheckServiceButton.IsEnabled = !busy;
         RemoveAdrenalinButton.IsEnabled = !busy;
+        UninstallDriverButton.IsEnabled = !busy;
         InstallOptionsPanel.Visibility = busy ? Visibility.Hidden : Visibility.Visible;
     }
 

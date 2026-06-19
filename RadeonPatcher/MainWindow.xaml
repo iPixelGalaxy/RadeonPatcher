@@ -456,7 +456,14 @@
                         </StackPanel>
                     </StackPanel>
 
-                    <TextBlock FontWeight="SemiBold" Text="Driver version"/>
+                    <Grid Margin="0,6,0,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock FontWeight="SemiBold" Text="Select Driver Version"/>
+                        <TextBlock x:Name="SelectedDriverText" Grid.Column="1" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
+                    </Grid>
                     <ComboBox x:Name="DriverCombo" MinHeight="32">
                         <ComboBox.ItemTemplate>
                             <DataTemplate>
@@ -464,7 +471,6 @@
                             </DataTemplate>
                         </ComboBox.ItemTemplate>
                     </ComboBox>
-                    <TextBlock x:Name="SelectedDriverText" Margin="0,8,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
 
                     <StackPanel x:Name="InstallOptionsPanel" Visibility="Hidden">
                         <Separator Margin="0,18,0,14"/>
@@ -478,6 +484,7 @@
                             <CheckBox x:Name="AudioCheck" Content="Install AMD HD Audio Driver"/>
                             <TextBlock x:Name="AudioInstalledHint" Text=" (?)" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" Cursor="Help" ToolTip="AMD HD Audio Driver is already installed." Visibility="Collapsed"/>
                         </StackPanel>
+                        <Button x:Name="UninstallDriverButton" Height="34" Margin="0,4,0,0" Content="Uninstall Driver &amp; Software" Click="UninstallDriverButton_Click"/>
                     </StackPanel>
                 </StackPanel>
             </Border>
