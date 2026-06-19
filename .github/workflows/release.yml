@@ -1,0 +1,79 @@
+name: Build Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version (for example, 1.2.0)
+        required: true
+        type: string
+      branch:
+        description: Branch or commit to build
+        required: true
+        default: master
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Validate version
+        shell: pwsh
+        run: |
+          if ('${{ inputs.version }}' -notmatch '^\d+\.\d+\.\d+$') {
+            throw 'Version must use major.minor.patch format, such as 1.2.0.'
+          }
+
+      - name: Check out requested revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish
+        shell: pwsh
+        run: |
+          dotnet publish .\RadeonPatcher\RadeonPatcher.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -p:Version=${{ inputs.version }} `
+            -p:AssemblyVersion=${{ inputs.version }} `
+            -p:FileVersion=${{ inputs.version }} `
+            -p:InformationalVersion=${{ inputs.version }}
+
+      - name: Generate checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash .\RadeonPatcher.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  RadeonPatcher.exe" | Set-Content .\RadeonPatcher.exe.sha256 -Encoding ascii
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RadeonPatcher-${{ inputs.version }}
+          path: |
+            RadeonPatcher.exe
+            RadeonPatcher.exe.sha256
+
+      - name: Create GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $sha = git rev-parse HEAD
+          gh release create "v${{ inputs.version }}" `
+            .\RadeonPatcher.exe `
+            .\RadeonPatcher.exe.sha256 `
+            --repo "${{ github.repository }}" `
+            --target $sha `
+            --title "RadeonPatcher ${{ inputs.version }}" `
+            --generate-notes
