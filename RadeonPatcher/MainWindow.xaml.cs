@@ -60,6 +60,7 @@ public partial class MainWindow : Window
             AdrenalinCheck.Content = _hardware.IsAdrenalinInstalled
                 ? "Reinstall AMD Software: Adrenalin Edition"
                 : "Install AMD Software: Adrenalin Edition";
+            UpdateMpoButtonText();
             UpdateSelectedDriverText();
             Log("Ready.");
             await LoadDriversAsync();
@@ -162,6 +163,7 @@ public partial class MainWindow : Window
             if (_hardware is not null)
             {
                 _hardware = _hardware with { IsMpoDisabled = disable };
+                UpdateMpoButtonText();
             }
 
             System.Windows.MessageBox.Show(this, message, "RadeonPatcher", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -186,6 +188,10 @@ public partial class MainWindow : Window
             ? "Reinstall GPU Driver"
             : "Install GPU Driver";
     }
+
+    private void UpdateMpoButtonText() => ToggleMpoButton.Content = _hardware?.IsMpoDisabled == true
+        ? "Turn MPO On"
+        : "Turn MPO Off";
 
     private async Task Busy(Func<Task> action)
     {
