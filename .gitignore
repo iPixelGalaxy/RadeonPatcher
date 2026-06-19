@@ -3,6 +3,8 @@ bin/
 obj/
 publish/
 artifacts/
+/RadeonPatcher.exe
+/RadeonPatcher.pdb
 
 ## Visual Studio / Rider / VS Code
 .vs/
@@ -32,3 +34,4 @@ project.assets.json
 Thumbs.db
 Desktop.ini
 .DS_Store
+RadeonPatcher/publish.lnk

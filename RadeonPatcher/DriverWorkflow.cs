@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using System.Text;
@@ -18,7 +19,10 @@ public sealed record HardwareInfo(
     string? AudioDriverVersion,
     string OsName,
     string OsVersion,
-    bool IsServer);
+    bool IsServer,
+    bool IsMpoDisabled,
+    bool IsUpdateCheckServiceInstalled,
+    bool IsAdrenalinInstalled);
 
 public sealed record DriverRelease(
     string DisplayName,
@@ -32,12 +36,12 @@ public sealed record InstallRequest(
     HardwareInfo Hardware,
     DriverRelease? Driver,
     string SupportUrl,
+    bool InstallDisplayDriver,
     bool EnableServerCompatibility,
     bool InstallAdrenalin,
     bool InstallBundledAudio,
     bool InstallUpdateCheckService,
-    bool ForceDownload,
-    bool DisableMpo);
+    bool ForceDownload);
 
 public sealed record UpdateCheckResult(
     bool UpdateAvailable,
@@ -79,12 +83,38 @@ public sealed class DriverWorkflow : IDisposable
     public async Task<HardwareInfo> GetHardwareInfoAsync()
     {
         var display = await RunPowerShellAsync("""
-            $gpu = Get-CimInstance Win32_PnPEntity | Where-Object { $_.PNPClass -eq 'Display' -and $_.PNPDeviceID -match 'VEN_1002' } | Select-Object -First 1
+            $gpu = Get-CimInstance Win32_PnPEntity |
+              Where-Object {
+                $_.PNPDeviceID -match 'VEN_1002' -and
+                (
+                  $_.PNPClass -eq 'Display' -or
+                  $_.Name -match 'Radeon|AMD|Microsoft Basic Display|Display|Video' -or
+                  $_.Service -match 'BasicDisplay|amdwddmg|amdkmdag'
+                )
+              } |
+              Sort-Object @{ Expression = { if ($_.PNPClass -eq 'Display') { 0 } else { 1 } } }, Name |
+              Select-Object -First 1
             $drv = Get-CimInstance Win32_PnPSignedDriver | Where-Object { $_.DeviceClass -eq 'DISPLAY' -and ($_.DeviceID -match 'VEN_1002' -or $_.DeviceName -match 'AMD|Radeon') } | Select-Object -First 1
             $aud = Get-CimInstance Win32_PnPSignedDriver | Where-Object { $_.DeviceClass -eq 'MEDIA' -and ($_.DeviceID -match 'HDAUDIO\\FUNC_01&VEN_1002&DEV_AA01' -or $_.DeviceName -match 'AMD High Definition Audio') } | Select-Object -First 1
             $os = Get-CimInstance Win32_OperatingSystem
+            $windowsVersion = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction SilentlyContinue
+            $osName = ($os.Caption -replace '^Microsoft\s+', '')
+            $osBuild = if ($windowsVersion.CurrentBuildNumber -and $null -ne $windowsVersion.UBR) { "$($windowsVersion.CurrentBuildNumber).$($windowsVersion.UBR)" } else { $os.Version }
+            $mpoDisabled = $false
+            try { $mpoDisabled = ((Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\Dwm' -ErrorAction SilentlyContinue).OverlayTestMode -eq 5) } catch {}
+            $updateCheckInstalled = $null -ne (Get-ScheduledTask -TaskName 'RadeonPatcher Update Check' -ErrorAction SilentlyContinue)
+            $adrenalinInstalled = $null -ne (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
+              Where-Object { $_.DisplayName -match '^AMD Software(?:: Adrenalin Edition)?$' } |
+              Select-Object -First 1)
             $packageVersion = $null
+            if ($drv) {
+              $graphicsUpdate = Get-ItemProperty 'HKLM:\SOFTWARE\AMD\AMDInstallManager\CheckForUpdates\GraphicsDriverConsumer' -ErrorAction SilentlyContinue
+              if ($graphicsUpdate.VersionCurrentlyInstalled -match '^\d+\.\d+\.\d+$') {
+                $packageVersion = $graphicsUpdate.VersionCurrentlyInstalled
+              }
+            }
             foreach ($manifest in @('C:\AMD\AMD-Software-Installer\Config\InstallManifest.json','C:\AMD\AMD-Software-Installer\Bin64\InstallManifest.json')) {
+              if ($packageVersion) { break }
               if (Test-Path -LiteralPath $manifest) {
                 try {
                   $json = Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json
@@ -114,9 +144,12 @@ public sealed class DriverWorkflow : IDisposable
               DisplayDriverVersion=$drv.DriverVersion
               DisplayDriverPackageVersion=$packageVersion
               AudioDriverVersion=$aud.DriverVersion
-              OsName=$os.Caption
-              OsVersion=$os.Version
+              OsName=$osName
+              OsVersion=$osBuild
               IsServer=($os.ProductType -ne 1)
+              IsMpoDisabled=$mpoDisabled
+              IsUpdateCheckServiceInstalled=$updateCheckInstalled
+              IsAdrenalinInstalled=$adrenalinInstalled
             } | ConvertTo-Json -Compress
             """);
         return SimpleJson.ParseHardware(display.Trim());
@@ -125,11 +158,6 @@ public sealed class DriverWorkflow : IDisposable
     public string? ResolveSupportUrl(HardwareInfo hardware)
     {
         var name = (hardware.GpuName ?? "").ToLowerInvariant();
-        if (name.Contains("9070 xt"))
-        {
-            return "https://www.amd.com/en/support/downloads/drivers.html/graphics/radeon-rx/radeon-rx-9000-series/amd-radeon-rx-9070-xt.html";
-        }
-
         var match = Regex.Match(name, @"rx\s*(?<num>\d{4})\s*(?<suffix>xtx|xt|gre)?", RegexOptions.IgnoreCase);
         if (!match.Success)
         {
@@ -190,17 +218,14 @@ public sealed class DriverWorkflow : IDisposable
     public async Task InstallAsync(InstallRequest request, Action<string> log)
     {
         await EnsurePayloadsAsync();
-        if (request.DisableMpo)
-        {
-            SetMpoState(disable: true);
-            log("MPO override set. Restart or sign out/in for it to apply cleanly.");
-        }
-
         if (request.Driver is not null)
         {
             var packageExe = await DownloadDriverAsync(request.Driver, request.ForceDownload, log);
             var packageRoot = await ExtractPackageAsync(packageExe, log);
-            await InstallDisplayDriverAsync(packageRoot, request, log);
+            if (request.InstallDisplayDriver)
+            {
+                await InstallDisplayDriverAsync(packageRoot, request, log);
+            }
             if (request.InstallAdrenalin)
             {
                 await InstallAdrenalinAsync(packageRoot, log);
@@ -216,6 +241,16 @@ public sealed class DriverWorkflow : IDisposable
         {
             await InstallUpdateCheckServiceAsync(log);
         }
+    }
+
+    public Task<string> SetMpoOverrideAsync(bool disable, Action<string> log)
+    {
+        SetMpoState(disable);
+        var message = disable
+            ? "MPO override set. Restart or sign out/in for it to apply cleanly."
+            : "MPO override removed. Restart or sign out/in for it to apply cleanly.";
+        log(message);
+        return Task.FromResult(message);
     }
 
     public async Task<UpdateCheckResult> CheckForUpdatesAsync(Action<string> log)
@@ -255,10 +290,9 @@ public sealed class DriverWorkflow : IDisposable
             $taskName = 'RadeonPatcher Update Check'
             $exe = '{{serviceExe.Replace("'", "''")}}'
             $action = New-ScheduledTaskAction -Execute $exe -Argument '--check-updates'
-            $triggers = @(
-              New-ScheduledTaskTrigger -AtStartup,
-              New-ScheduledTaskTrigger -Daily -At '{{startTime}}'
-            )
+            $triggers = @()
+            $triggers += New-ScheduledTaskTrigger -AtStartup
+            $triggers += New-ScheduledTaskTrigger -Daily -At '{{startTime}}'
             $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 15)
             $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Highest
             Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $triggers -Settings $settings -Principal $principal -Force | Out-Null
@@ -316,7 +350,7 @@ public sealed class DriverWorkflow : IDisposable
         if (!request.EnableServerCompatibility)
         {
             log($"Installing display driver INF: {displayInf}");
-            await RunProcessAsync("pnputil.exe", $"/add-driver \"{displayInf}\" /install", log, allowNoUpdate: true);
+            await StageAndForceInstallDisplayDriverAsync(displayInf, request.Hardware.GpuInstanceId, log);
             return;
         }
 
@@ -325,7 +359,34 @@ public sealed class DriverWorkflow : IDisposable
         PatchDisplayInf(patchedInf, request.Hardware.GpuInstanceId, log);
         await SignPackageAsync(patchDirectory, patchedInf, log);
         log($"Installing patched display driver INF: {patchedInf}");
-        await RunProcessAsync("pnputil.exe", $"/add-driver \"{patchedInf}\" /install", log, allowNoUpdate: true);
+        await StageAndForceInstallDisplayDriverAsync(patchedInf, request.Hardware.GpuInstanceId, log);
+    }
+
+    private static async Task StageAndForceInstallDisplayDriverAsync(string infPath, string? instanceId, Action<string> log)
+    {
+        await RunProcessAsync("pnputil.exe", $"/add-driver \"{infPath}\"", log);
+
+        var hardwareId = ExtractExactHardwareId(instanceId);
+        if (string.IsNullOrWhiteSpace(hardwareId))
+        {
+            throw new InvalidOperationException("Could not determine the exact GPU hardware ID for forced display driver installation.");
+        }
+
+        log($"Forcing display driver selection for {hardwareId}.");
+        var installed = UpdateDriverForPlugAndPlayDevices(
+            IntPtr.Zero,
+            hardwareId,
+            Path.GetFullPath(infPath),
+            InstallFlagForce | InstallFlagNonInteractive,
+            out var rebootRequired);
+        if (!installed)
+        {
+            throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "Forced display driver installation failed.");
+        }
+
+        log(rebootRequired
+            ? "Display driver installed. Windows reports a reboot is required."
+            : "Display driver installed.");
     }
 
     private async Task InstallBundledAudioAsync(bool serverCompatibility, Action<string> log)
@@ -543,7 +604,7 @@ public sealed class DriverWorkflow : IDisposable
     {
         if (string.IsNullOrWhiteSpace(instanceId)) return null;
         var match = Regex.Match(instanceId, @"PCI\\VEN_1002&DEV_[^\\]+", RegexOptions.IgnoreCase);
-        return match.Success ? match.Value.Split('\\')[0].ToUpperInvariant() : null;
+        return match.Success ? match.Value.ToUpperInvariant() : null;
     }
 
     private static string GetCatalogNameFromInf(string infPath)
@@ -592,6 +653,7 @@ public sealed class DriverWorkflow : IDisposable
     private async Task<string> EnsureCodeSigningCertificateAsync(Action<string> log)
     {
         var script = """
+            $ProgressPreference = 'SilentlyContinue'
             $subject = 'CN=AMD Driver Modding Authority'
             $cert = Get-ChildItem Cert:\LocalMachine\My -CodeSigningCert -ErrorAction SilentlyContinue |
               Where-Object { $_.Subject -eq $subject } |
@@ -605,10 +667,17 @@ public sealed class DriverWorkflow : IDisposable
             foreach ($store in 'Cert:\LocalMachine\Root','Cert:\LocalMachine\TrustedPublisher','Cert:\CurrentUser\Root','Cert:\CurrentUser\TrustedPublisher') {
               Import-Certificate -FilePath $cer -CertStoreLocation $store | Out-Null
             }
-            $cert.Thumbprint
+            [Console]::Out.WriteLine($cert.Thumbprint)
             """;
         log("Ensuring local code-signing certificate is trusted.");
-        return (await RunPowerShellAsync(script)).Trim();
+        var output = await RunPowerShellAsync(script);
+        var thumbprint = Regex.Match(output, @"\b[0-9A-Fa-f]{40}\b").Value.ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(thumbprint))
+        {
+            throw new InvalidOperationException($"Could not determine the code-signing certificate thumbprint.{Environment.NewLine}{output.Trim()}");
+        }
+
+        return thumbprint;
     }
 
     private static DriverRelease DescribeRelease(string downloadUrl, string html, string supportUrl)
@@ -704,8 +773,22 @@ public sealed class DriverWorkflow : IDisposable
         var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
         var output = new StringBuilder();
         var exit = await RunProcessCaptureAsync("powershell.exe", $"-NoProfile -ExecutionPolicy Bypass -EncodedCommand {encoded}", output);
-        if (exit != 0) throw new InvalidOperationException(output.ToString());
+        if (exit != 0) throw new InvalidOperationException(CleanPowerShellOutput(output.ToString()));
         return output.ToString();
+    }
+
+    private static string CleanPowerShellOutput(string output)
+    {
+        if (!output.StartsWith("#< CLIXML", StringComparison.OrdinalIgnoreCase))
+        {
+            return output;
+        }
+
+        var messages = Regex.Matches(output, @"<S S=""Error"">(?<message>.*?)</S>", RegexOptions.Singleline)
+            .Select(m => System.Net.WebUtility.HtmlDecode(m.Groups["message"].Value)
+                .Replace("_x000D__x000A", Environment.NewLine, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        return messages.Count == 0 ? output : string.Join("", messages);
     }
 
     private static async Task<int> RunProcessAsync(string fileName, string arguments, Action<string> log, string? workingDirectory = null, bool throwOnError = true, bool allowNoUpdate = false)
@@ -720,7 +803,13 @@ public sealed class DriverWorkflow : IDisposable
 
         if (throwOnError && exit != 0)
         {
-            throw new InvalidOperationException($"{Path.GetFileName(fileName)} failed with exit code {exit}.");
+            var command = string.IsNullOrWhiteSpace(arguments)
+                ? fileName
+                : $"{fileName} {arguments}";
+            var details = string.IsNullOrWhiteSpace(text)
+                ? "No output was captured."
+                : text.Trim();
+            throw new InvalidOperationException($"{Path.GetFileName(fileName)} failed with exit code {exit}.{Environment.NewLine}{Environment.NewLine}Command:{Environment.NewLine}{command}{Environment.NewLine}{Environment.NewLine}Output:{Environment.NewLine}{details}");
         }
 
         return exit;
@@ -745,6 +834,17 @@ public sealed class DriverWorkflow : IDisposable
         return process.ExitCode;
     }
 
+    private const uint InstallFlagForce = 0x00000001;
+    private const uint InstallFlagNonInteractive = 0x00000004;
+
+    [DllImport("newdev.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool UpdateDriverForPlugAndPlayDevices(
+        IntPtr hwndParent,
+        string hardwareId,
+        string fullInfPath,
+        uint installFlags,
+        out bool rebootRequired);
+
     public void Dispose() => _http.Dispose();
 }
 
@@ -767,6 +867,9 @@ internal static class SimpleJson
             Value(json, "AudioDriverVersion"),
             Value(json, "OsName") ?? "Windows",
             Value(json, "OsVersion") ?? "",
-            string.Equals(Value(json, "IsServer"), "true", StringComparison.OrdinalIgnoreCase));
+            string.Equals(Value(json, "IsServer"), "true", StringComparison.OrdinalIgnoreCase),
+            string.Equals(Value(json, "IsMpoDisabled"), "true", StringComparison.OrdinalIgnoreCase),
+            string.Equals(Value(json, "IsUpdateCheckServiceInstalled"), "true", StringComparison.OrdinalIgnoreCase),
+            string.Equals(Value(json, "IsAdrenalinInstalled"), "true", StringComparison.OrdinalIgnoreCase));
     }
 }

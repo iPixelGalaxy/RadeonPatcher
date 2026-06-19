@@ -11,6 +11,7 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
+    <PublishDir>$(MSBuildProjectDirectory)\..\</PublishDir>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <ApplicationIcon>Resources\AMDSoftwareConsumer.ico</ApplicationIcon>
@@ -29,5 +30,9 @@
   <ItemGroup>
     <Resource Include="Resources\AMDSoftwareConsumer.ico" />
   </ItemGroup>
+
+  <Target Name="StopRunningAppBeforePublish" BeforeTargets="GenerateSingleFileBundle" Condition="'$(PublishSingleFile)' == 'true'">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;$ErrorActionPreference = 'SilentlyContinue'; Get-Process -Name '$(AssemblyName)' -ErrorAction SilentlyContinue | ForEach-Object { try { $_.CloseMainWindow() | Out-Null; Start-Sleep -Milliseconds 300; if (-not $_.HasExited) { Stop-Process -Id $_.Id -Force -ErrorAction Stop } } catch {} }; exit 0&quot;" />
+  </Target>
 
 </Project>

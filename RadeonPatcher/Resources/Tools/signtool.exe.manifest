@@ -24,12 +24,4 @@
         </dependentAssembly>
     </dependency>
 
-    <dependency>
-        <dependentAssembly>
-            <assemblyIdentity
-                name="Microsoft.Windows.Build.Appx.AppxSip.dll"
-                version="0.0.0.0"
-            />
-        </dependentAssembly>
-    </dependency>
 </assembly>

@@ -34,19 +34,18 @@ public partial class MainWindow : Window
             await _workflow.EnsurePayloadsAsync();
 
             GpuText.Text = _hardware.GpuName ?? "No AMD display adapter detected.";
-            GpuIdText.Text = _hardware.GpuInstanceId ?? "";
             DisplayDriverText.Text = _hardware.DisplayDriverPackageVersion is null
-                ? $"Display driver: {_hardware.DisplayDriverVersion ?? "unknown"}"
-                : $"Display driver: {_hardware.DisplayDriverPackageVersion} ({_hardware.DisplayDriverVersion})";
+                ? $"Current Driver: {_hardware.DisplayDriverVersion ?? "unknown"}"
+                : $"Current Driver: {_hardware.DisplayDriverPackageVersion}";
             OsText.Text = $"{_hardware.OsName} ({_hardware.OsVersion})";
             AudioText.Text = _hardware.AudioDriverVersion is null
                 ? "AMD HD Audio: not detected"
                 : $"AMD HD Audio: {_hardware.AudioDriverVersion}";
-            ToolText.Text = $"Work root: {_workflow.WorkRoot}";
 
             var supportUrl = _workflow.ResolveSupportUrl(_hardware) ?? "";
             SupportUrlBox.Text = supportUrl;
             var needsCustomUrl = string.IsNullOrWhiteSpace(supportUrl);
+            DriverSourcePanel.Visibility = needsCustomUrl ? Visibility.Visible : Visibility.Collapsed;
             CustomUrlCheck.Visibility = needsCustomUrl ? Visibility.Visible : Visibility.Collapsed;
             CustomUrlCheck.IsChecked = needsCustomUrl;
             CustomUrlPanel.Visibility = needsCustomUrl ? Visibility.Visible : Visibility.Collapsed;
@@ -55,6 +54,12 @@ public partial class MainWindow : Window
                 : $"Using detected AMD support page for {_hardware.GpuName}.";
             ServerCompatCheck.IsChecked = _hardware.IsServer;
             AudioCheck.IsChecked = _hardware.AudioDriverVersion is null || Version.Parse(_hardware.AudioDriverVersion) < Version.Parse("10.0.1.42");
+            UpdateCheckServiceCheck.IsChecked = false;
+            UpdateCheckServiceCheck.IsEnabled = !_hardware.IsUpdateCheckServiceInstalled;
+            AdrenalinCheck.Content = _hardware.IsAdrenalinInstalled
+                ? "Reinstall AMD Software: Adrenalin Edition"
+                : "Install AMD Software: Adrenalin Edition";
+            UpdateSelectedDriverText();
             Log("Ready.");
             await LoadDriversAsync();
         });
@@ -92,6 +97,7 @@ public partial class MainWindow : Window
         {
             SupportUrlBox.Text = _workflow.ResolveSupportUrl(_hardware) ?? "";
             var needsCustomUrl = string.IsNullOrWhiteSpace(SupportUrlBox.Text);
+            DriverSourcePanel.Visibility = needsCustomUrl ? Visibility.Visible : Visibility.Collapsed;
             CustomUrlCheck.Visibility = needsCustomUrl ? Visibility.Visible : Visibility.Collapsed;
             CustomUrlPanel.Visibility = needsCustomUrl ? Visibility.Visible : Visibility.Collapsed;
             SourceSummaryText.Text = string.IsNullOrWhiteSpace(SupportUrlBox.Text)
@@ -121,15 +127,30 @@ public partial class MainWindow : Window
                 _hardware ?? await _workflow.GetHardwareInfoAsync(),
                 DriverCombo.SelectedItem as DriverRelease,
                 SupportUrlBox.Text.Trim(),
+                InstallDisplayDriverCheck.IsChecked == true,
                 ServerCompatCheck.IsChecked == true,
                 AdrenalinCheck.IsChecked == true,
                 AudioCheck.IsChecked == true,
                 UpdateCheckServiceCheck.IsChecked == true,
-                ForceDownloadCheck.IsChecked == true,
-                DisableMpoCheck.IsChecked == true);
+                ForceDownloadCheck.IsChecked == true);
 
             await _workflow.InstallAsync(request, Log);
             Log("Install workflow finished.");
+        });
+    }
+
+    private async void ToggleMpoButton_Click(object sender, RoutedEventArgs e)
+    {
+        var disable = _hardware?.IsMpoDisabled != true;
+        await Busy(async () =>
+        {
+            var message = await _workflow.SetMpoOverrideAsync(disable, Log);
+            if (_hardware is not null)
+            {
+                _hardware = _hardware with { IsMpoDisabled = disable };
+            }
+
+            System.Windows.MessageBox.Show(this, message, "RadeonPatcher", MessageBoxButton.OK, MessageBoxImage.Information);
         });
     }
 
@@ -140,10 +161,16 @@ public partial class MainWindow : Window
         if (DriverCombo.SelectedItem is not DriverRelease driver)
         {
             SelectedDriverText.Text = "";
+            InstallDisplayDriverCheck.Content = "Install GPU Driver";
             return;
         }
 
         SelectedDriverText.Text = $"{driver.ReleaseDateText}  {driver.FileSizeText}";
+        var currentVersion = _hardware?.DisplayDriverPackageVersion;
+        InstallDisplayDriverCheck.Content = !string.IsNullOrWhiteSpace(currentVersion) &&
+            string.Equals(driver.VersionText, currentVersion, StringComparison.OrdinalIgnoreCase)
+            ? "Reinstall GPU Driver"
+            : "Install GPU Driver";
     }
 
     private async Task Busy(Func<Task> action)
@@ -171,6 +198,7 @@ public partial class MainWindow : Window
         RefreshButton.IsEnabled = !busy;
         ThemeCombo.IsEnabled = !busy;
         InstallButton.IsEnabled = !busy;
+        ToggleMpoButton.IsEnabled = !busy;
     }
 
     private void Log(string message)
