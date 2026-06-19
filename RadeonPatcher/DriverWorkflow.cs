@@ -134,7 +134,11 @@ public sealed class DriverWorkflow : IDisposable
             } | ConvertTo-Json -Compress
             """);
         var hardware = SimpleJson.ParseHardware(display.Trim());
-        return hardware with { DisplayDriverPackageVersion = ResolvePackageVersion(hardware) };
+        return hardware with
+        {
+            GpuName = GpuModelDatabase.ResolveName(hardware.GpuInstanceId, hardware.GpuName),
+            DisplayDriverPackageVersion = ResolvePackageVersion(hardware)
+        };
     }
 
     public string? ResolveSupportUrl(HardwareInfo hardware)

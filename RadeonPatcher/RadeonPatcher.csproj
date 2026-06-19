@@ -27,6 +27,7 @@
   <ItemGroup>
     <EmbeddedResource Include="Resources\Tools\**\*" LogicalName="Tools\%(RecursiveDir)%(Filename)%(Extension)" />
     <EmbeddedResource Include="Resources\BundledAudio\**\*" LogicalName="BundledAudio\%(RecursiveDir)%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Resources\GpuModels.json" LogicalName="GpuModels.json" />
     <EmbeddedResource Include="$(UpdateCheckerPublishDir)RadeonPatcherUpdateCheck.exe"
                       LogicalName="UpdateChecker\RadeonPatcherUpdateCheck.exe" />
   </ItemGroup>
