@@ -372,8 +372,6 @@ public partial class MainWindow : Window
             return;
         }
 
-        var removeDisplay = _canUninstallGpuDriver;
-        var removeAudio = _canUninstallAudioDriver;
         var removed = false;
         await Busy(async () =>
         {
@@ -382,14 +380,10 @@ public partial class MainWindow : Window
             Log("AMD driver and software removal finished.");
             removed = true;
         });
-        if (removed && (removeDisplay || removeAudio))
+        if (removed)
         {
-            RememberRemovedVersions(removeDisplay, removeAudio);
-            await RefreshAfterDriverRemovalAsync(removeDisplay, removeAudio);
-        }
-        else if (removed)
-        {
-            await RefreshAsync();
+            RememberRemovedVersions(displayRemoved: true, audioRemoved: true);
+            await RefreshAfterDriverRemovalAsync(expectDisplayRemoved: true, expectAudioRemoved: true);
         }
     }
 
