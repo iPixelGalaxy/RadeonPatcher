@@ -999,7 +999,12 @@ public sealed class DriverWorkflow : IDisposable
     private string CopyPackageDirectory(string infPath, string label)
     {
         var source = Path.GetDirectoryName(infPath)!;
-        var destination = Path.Combine(PatchedRoot, $"patched-{label}-{DateTime.Now:yyyyMMdd-HHmmss}");
+        foreach (var existing in Directory.EnumerateDirectories(PatchedRoot, $"patched-{label}*", SearchOption.TopDirectoryOnly))
+        {
+            Directory.Delete(existing, true);
+        }
+
+        var destination = Path.Combine(PatchedRoot, $"patched-{label}");
         CopyDirectory(source, destination);
         return destination;
     }
