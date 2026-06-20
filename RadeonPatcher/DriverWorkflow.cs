@@ -878,11 +878,8 @@ public sealed class DriverWorkflow : IDisposable
     private async Task<string?> InstallBundledAudioAsync(bool serverCompatibility, Action<string> log)
     {
         var currentHardware = await GetHardwareInfoAsync();
-        if (Version.TryParse(currentHardware.AudioDriverVersion, out var installedVersion) && installedVersion >= new Version(10, 0, 1, 42))
-        {
-            log("AMD HD Audio driver is already installed; skipping installation.");
-            return null;
-        }
+        var reinstall = Version.TryParse(currentHardware.AudioDriverVersion, out var installedVersion) &&
+            installedVersion >= new Version(10, 0, 1, 42);
 
         var sourceInf = Path.Combine(AudioPayloadRoot, "AtihdWT6.inf");
         if (!File.Exists(sourceInf))
@@ -896,6 +893,13 @@ public sealed class DriverWorkflow : IDisposable
         {
             PatchGenericAmdInf(inf, log);
             await SignPackageAsync(package, inf, log);
+        }
+
+        if (reinstall)
+        {
+            log("Removing the installed AMD HD Audio driver before reinstalling the bundled version.");
+            await UninstallAmdDriverPackagesAsync("MEDIA", "HD Audio", log);
+            await ScanForDeviceChangesAsync(log);
         }
 
         log($"Installing bundled AMD HD Audio driver: {inf}");

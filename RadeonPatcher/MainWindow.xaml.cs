@@ -98,8 +98,13 @@ public partial class MainWindow : Window
             var audioNeedsUpdate = !Version.TryParse(effectiveAudioVersion, out var installedAudioVersion) ||
                 installedAudioVersion < LatestBundledAudioVersion;
             _updatingOptions = true;
-            AudioCheck.IsChecked = audioNeedsUpdate && _settings.InstallAudioDriver;
-            AudioCheck.IsEnabled = audioNeedsUpdate;
+            AudioCheck.Content = !audioInstalled
+                ? "Install Latest AMD HD Audio Driver"
+                : audioNeedsUpdate
+                    ? "Update to Latest AMD HD Audio Driver"
+                    : "Reinstall Latest AMD HD Audio Driver";
+            AudioCheck.IsChecked = _settings.InstallAudioDriver;
+            AudioCheck.IsEnabled = true;
             _updatingOptions = false;
             AudioInstalledHint.ToolTip = !audioNeedsUpdate
                 ? $"AMD HD Audio Driver {LatestBundledAudioVersion} or later is already installed."
@@ -239,7 +244,6 @@ public partial class MainWindow : Window
         {
             _settings.LastInstalledAudioDriverVersion = null;
             _settings.LastInstalledAudioDriverAt = removedAt;
-            _settings.InstallAudioDriver = true;
         }
         SaveSettings();
         _ = RefreshAfterForcedVersionExpiresAsync(removedAt);
