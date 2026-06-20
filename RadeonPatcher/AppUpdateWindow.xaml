@@ -41,7 +41,7 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ScrollBar">
-                        <Grid Background="{TemplateBinding Background}">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="6">
                             <Track x:Name="PART_Track" IsDirectionReversed="True">
                                 <Track.DecreaseRepeatButton>
                                     <RepeatButton Command="ScrollBar.PageUpCommand" Style="{StaticResource UpdateScrollBarPageButtonStyle}"/>
@@ -53,7 +53,7 @@
                                     <RepeatButton Command="ScrollBar.PageDownCommand" Style="{StaticResource UpdateScrollBarPageButtonStyle}"/>
                                 </Track.IncreaseRepeatButton>
                             </Track>
-                        </Grid>
+                        </Border>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
@@ -89,7 +89,7 @@
             </Border>
             <StackPanel x:Name="ReleaseNotesPanel" Margin="0,16,0,0" Visibility="Collapsed">
                 <TextBlock FontWeight="SemiBold" Text="What's changed" Margin="0,0,0,8"/>
-                <Border Background="{DynamicResource PanelBackgroundBrush}" CornerRadius="8" Padding="12,8">
+                <Border Background="{DynamicResource PanelBackgroundBrush}" CornerRadius="8" Padding="12,8,3,8">
                     <ScrollViewer MaxHeight="220" VerticalScrollBarVisibility="Auto">
                         <ScrollViewer.Resources>
                             <Style TargetType="ScrollBar" BasedOn="{StaticResource UpdateScrollBarStyle}"/>
