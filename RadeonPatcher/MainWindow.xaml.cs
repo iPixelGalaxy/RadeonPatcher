@@ -13,6 +13,7 @@ namespace RadeonPatcher;
 public partial class MainWindow : Window
 {
     private static readonly Version LatestBundledAudioVersion = new(10, 0, 1, 42);
+    private static readonly TimeSpan ForcedVersionDuration = TimeSpan.FromMinutes(2);
     private readonly DriverWorkflow _workflow = new();
     private readonly UserSettings _settings;
     private HardwareInfo? _hardware;
@@ -55,13 +56,19 @@ public partial class MainWindow : Window
             _canUninstallAdrenalin = _hardware.IsAdrenalinInstalled;
 
             GpuText.Text = _hardware.GpuName ?? "No AMD display adapter detected.";
-            DisplayDriverText.Text = _hardware.DisplayDriverPackageVersion is null
+            var displayForced = IsForcedVersionCurrent(_settings.LastInstalledDisplayPackageAt);
+            var audioForced = IsForcedVersionCurrent(_settings.LastInstalledAudioDriverAt);
+            DisplayDriverText.Text = displayForced && !string.IsNullOrWhiteSpace(_settings.LastInstalledDisplayPackageVersion)
+                ? $"Installed Video Driver: {_settings.LastInstalledDisplayPackageVersion}"
+                : _hardware.DisplayDriverPackageVersion is null
                 ? _hardware.DisplayDriverVersion is null
                     ? "Installed Video Driver: None"
                     : "Installed Video Driver: Unknown"
                 : $"Installed Video Driver: {_hardware.DisplayDriverPackageVersion}";
             OsText.Text = $"{_hardware.OsName} ({_hardware.OsVersion})";
-            AudioText.Text = _hardware.AudioDriverVersion is null
+            AudioText.Text = audioForced && !string.IsNullOrWhiteSpace(_settings.LastInstalledAudioDriverVersion)
+                ? $"Installed AMD HD Audio Driver: {_settings.LastInstalledAudioDriverVersion}"
+                : _hardware.AudioDriverVersion is null
                 ? "Installed AMD HD Audio Driver: None"
                 : $"Installed AMD HD Audio Driver: {_hardware.AudioDriverVersion}";
 
@@ -198,9 +205,19 @@ public partial class MainWindow : Window
 
     private void RememberInstalledVersions(InstallResult result)
     {
-        if (result.DisplayPackageVersion is not null) _settings.LastInstalledDisplayPackageVersion = result.DisplayPackageVersion;
-        if (result.AudioDriverVersion is not null) _settings.LastInstalledAudioDriverVersion = result.AudioDriverVersion;
+        var installedAt = DateTimeOffset.UtcNow;
+        if (result.DisplayPackageVersion is not null)
+        {
+            _settings.LastInstalledDisplayPackageVersion = result.DisplayPackageVersion;
+            _settings.LastInstalledDisplayPackageAt = installedAt;
+        }
+        if (result.AudioDriverVersion is not null)
+        {
+            _settings.LastInstalledAudioDriverVersion = result.AudioDriverVersion;
+            _settings.LastInstalledAudioDriverAt = installedAt;
+        }
         SaveSettings();
+        _ = RefreshAfterForcedVersionExpiresAsync(installedAt);
     }
 
     private async Task RefreshAfterInstallAsync(InstallRequest request, InstallResult result)
@@ -209,15 +226,29 @@ public partial class MainWindow : Window
         var expectAudio = result.AudioDriverVersion is not null;
         Log("Refreshing installed driver versions.");
         await RefreshAsync();
-        if (expectDisplay)
-        {
-            DisplayDriverText.Text = $"Installed Video Driver: {result.DisplayPackageVersion} (pending Windows refresh)";
-        }
-        if (expectAudio) AudioText.Text = $"Installed AMD HD Audio Driver: {result.AudioDriverVersion} (pending Windows refresh)";
         if (expectDisplay || expectAudio)
         {
             PromptForRestart("Driver installation finished", "Restart Windows to finish applying the installed AMD drivers.");
             _ = ObserveInstalledDriverStateAsync(expectDisplay, expectAudio);
+        }
+    }
+
+    private static bool IsForcedVersionCurrent(DateTimeOffset? installedAt) =>
+        installedAt is not null && DateTimeOffset.UtcNow - installedAt.Value < ForcedVersionDuration;
+
+    private async Task RefreshAfterForcedVersionExpiresAsync(DateTimeOffset installedAt)
+    {
+        try
+        {
+            await Task.Delay(ForcedVersionDuration);
+            if (_settings.LastInstalledDisplayPackageAt == installedAt || _settings.LastInstalledAudioDriverAt == installedAt)
+            {
+                await RefreshAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            Log("Could not refresh driver versions after the forced value expired: " + ex.Message);
         }
     }
 
@@ -551,7 +582,7 @@ public partial class MainWindow : Window
         UninstallAudioDriverButton.IsEnabled = !busy && _canUninstallAudioDriver;
         UninstallAdrenalinButton.IsEnabled = !busy && _canUninstallAdrenalin;
         UninstallAllButton.IsEnabled = !busy && (_canUninstallGpuDriver || _canUninstallAudioDriver || _canUninstallAdrenalin);
-        InstallOptionsPanel.Visibility = busy ? Visibility.Hidden : Visibility.Visible;
+        InstallOptionsPanel.IsEnabled = !busy;
     }
 
     private void Log(string message)
