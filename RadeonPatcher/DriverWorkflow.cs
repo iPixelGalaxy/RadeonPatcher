@@ -383,9 +383,16 @@ public sealed class DriverWorkflow : IDisposable
     private async Task UninstallAmdDriverPackagesAsync(string deviceClass, string componentName, Action<string> log)
     {
         var output = await RunPowerShellAsync($$"""
-            Get-WindowsDriver -Online -All |
-              Where-Object { $_.ClassName -eq '{{deviceClass}}' -and $_.ProviderName -match 'AMD|Advanced Micro Devices' } |
-              Select-Object -ExpandProperty PublishedName
+            $entries = (& pnputil.exe /enum-drivers /class '{{deviceClass}}' | Out-String) -split '(?m)(?=^Published Name\s*:)'
+            foreach ($entry in $entries) {
+              if ($entry -match '(?m)^Published Name\s*:\s*(?<inf>oem\d+\.inf)\s*$') {
+                $inf = $Matches['inf']
+                if ($entry -match '(?m)^Provider Name\s*:\s*(?<provider>.+?)\s*$' -and
+                    $Matches['provider'] -match 'AMD|Advanced Micro Devices') {
+                  [Console]::Out.WriteLine($inf)
+                }
+              }
+            }
             """);
         var packages = Regex.Matches(output, @"\boem\d+\.inf\b", RegexOptions.IgnoreCase)
             .Select(match => match.Value)
