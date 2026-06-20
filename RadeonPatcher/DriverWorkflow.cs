@@ -360,34 +360,13 @@ public sealed class DriverWorkflow : IDisposable
     public async Task UninstallDisplayDriverAsync(HardwareInfo hardware, Action<string> log)
     {
         await BackupAdrenalinSettingsAsync(log);
-        await UninstallDisplayDriverCoreAsync(hardware, log);
+        await UninstallAmdDriverPackagesAsync("Display", "display", log);
+        await ScanForDeviceChangesAsync(log);
     }
 
     public async Task UninstallAudioDriverAsync(Action<string> log)
     {
-        var activeInf = await GetActiveAudioDriverInfNameAsync();
-        if (string.IsNullOrWhiteSpace(activeInf))
-        {
-            log("No active AMD HD Audio driver package was found.");
-            return;
-        }
-
-        log($"Removing active AMD HD Audio driver package: {activeInf}");
-        await RunProcessAsync("pnputil.exe", $"/delete-driver {activeInf} /uninstall /force", log, allowAlreadyRemoved: true);
-        await ScanForDeviceChangesAsync(log);
-    }
-
-    private static async Task UninstallDisplayDriverCoreAsync(HardwareInfo hardware, Action<string> log)
-    {
-        var activeInf = await GetActiveDisplayDriverInfNameAsync(hardware.GpuInstanceId);
-        if (string.IsNullOrWhiteSpace(activeInf))
-        {
-            log("No active AMD display driver package was found.");
-            return;
-        }
-
-        log($"Removing active display driver package: {activeInf}");
-        await RunProcessAsync("pnputil.exe", $"/delete-driver {activeInf} /uninstall /force", log, allowAlreadyRemoved: true);
+        await UninstallAmdDriverPackagesAsync("MEDIA", "HD Audio", log);
         await ScanForDeviceChangesAsync(log);
     }
 
@@ -776,20 +755,6 @@ public sealed class DriverWorkflow : IDisposable
             $driver = Get-CimInstance Win32_PnPSignedDriver |
               Where-Object { $_.DeviceClass -eq 'DISPLAY' -and $_.DeviceID -eq '{{escapedInstanceId}}' } |
               Sort-Object DriverDate -Descending |
-              Select-Object -First 1
-            if ($driver -and $driver.InfName -match '^oem\d+\.inf$') {
-              [Console]::Out.WriteLine($driver.InfName)
-            }
-            """);
-        var match = Regex.Match(output, @"\boem\d+\.inf\b", RegexOptions.IgnoreCase);
-        return match.Success ? match.Value : null;
-    }
-
-    private static async Task<string?> GetActiveAudioDriverInfNameAsync()
-    {
-        var output = await RunPowerShellAsync("""
-            $driver = Get-CimInstance Win32_PnPSignedDriver |
-              Where-Object { $_.DeviceClass -eq 'MEDIA' -and ($_.DeviceID -match 'HDAUDIO\\FUNC_01&VEN_1002&DEV_AA01' -or $_.DeviceName -match 'AMD High Definition Audio') } |
               Select-Object -First 1
             if ($driver -and $driver.InfName -match '^oem\d+\.inf$') {
               [Console]::Out.WriteLine($driver.InfName)

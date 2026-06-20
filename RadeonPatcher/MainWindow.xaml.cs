@@ -51,13 +51,17 @@ public partial class MainWindow : Window
                 await _workflow.EnsureUpdateCheckServiceCurrentAsync(Log);
             }
             _hasDownloadCache = _workflow.HasDownloadCache();
-            _canUninstallGpuDriver = !string.IsNullOrWhiteSpace(_hardware.DisplayDriverOriginalInf);
-            _canUninstallAudioDriver = _hardware.AudioDriverVersion is not null;
+            var displayForced = IsForcedVersionCurrent(_settings.LastInstalledDisplayPackageAt);
+            var audioForced = IsForcedVersionCurrent(_settings.LastInstalledAudioDriverAt);
+            _canUninstallGpuDriver = displayForced
+                ? !string.IsNullOrWhiteSpace(_settings.LastInstalledDisplayPackageVersion)
+                : !string.IsNullOrWhiteSpace(_hardware.DisplayDriverOriginalInf);
+            _canUninstallAudioDriver = audioForced
+                ? !string.IsNullOrWhiteSpace(_settings.LastInstalledAudioDriverVersion)
+                : _hardware.AudioDriverVersion is not null;
             _canUninstallAdrenalin = _hardware.IsAdrenalinInstalled;
 
             GpuText.Text = _hardware.GpuName ?? "No AMD display adapter detected.";
-            var displayForced = IsForcedVersionCurrent(_settings.LastInstalledDisplayPackageAt);
-            var audioForced = IsForcedVersionCurrent(_settings.LastInstalledAudioDriverAt);
             DisplayDriverText.Text = displayForced
                 ? $"Installed Video Driver: {_settings.LastInstalledDisplayPackageVersion ?? "None"}"
                 : _hardware.DisplayDriverPackageVersion is null
