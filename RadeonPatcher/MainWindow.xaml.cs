@@ -257,6 +257,11 @@ public partial class MainWindow : Window
     private static bool IsForcedVersionCurrent(DateTimeOffset? installedAt) =>
         installedAt is not null && DateTimeOffset.UtcNow - installedAt.Value < ForcedVersionDuration;
 
+    private string? GetEffectiveDisplayPackageVersion() =>
+        IsForcedVersionCurrent(_settings.LastInstalledDisplayPackageAt)
+            ? _settings.LastInstalledDisplayPackageVersion
+            : _hardware?.DisplayDriverPackageVersion;
+
     private async Task RefreshAfterForcedVersionExpiresAsync(DateTimeOffset installedAt)
     {
         try
@@ -469,7 +474,7 @@ public partial class MainWindow : Window
             _settings.SelectedDriverVersion = driver.VersionText;
             SaveSettings();
         }
-        var currentVersion = _hardware?.DisplayDriverPackageVersion;
+        var currentVersion = GetEffectiveDisplayPackageVersion();
         if (Version.TryParse(driver.VersionText, out var selected) && Version.TryParse(currentVersion, out var current))
         {
             InstallDisplayDriverCheck.Content = selected > current
@@ -492,7 +497,7 @@ public partial class MainWindow : Window
     private bool IsSelectedDriverDifferentFromCurrent()
     {
         var selectedVersion = (DriverCombo.SelectedItem as DriverRelease)?.VersionText;
-        var currentVersion = _hardware?.DisplayDriverPackageVersion;
+        var currentVersion = GetEffectiveDisplayPackageVersion();
         return Version.TryParse(selectedVersion, out var selected) &&
             Version.TryParse(currentVersion, out var current) &&
             selected != current;
@@ -500,7 +505,7 @@ public partial class MainWindow : Window
 
     private void UpdateAdrenalinControl()
     {
-        var currentVersion = _hardware?.DisplayDriverPackageVersion;
+        var currentVersion = GetEffectiveDisplayPackageVersion();
         var selectedVersion = (DriverCombo.SelectedItem as DriverRelease)?.VersionText;
         var action = "Install";
         var forceInstall = false;
