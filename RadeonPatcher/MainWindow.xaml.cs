@@ -582,6 +582,7 @@ public partial class MainWindow : Window
         UninstallAudioDriverButton.IsEnabled = !busy && _canUninstallAudioDriver;
         UninstallAdrenalinButton.IsEnabled = !busy && _canUninstallAdrenalin;
         UninstallAllButton.IsEnabled = !busy && (_canUninstallGpuDriver || _canUninstallAudioDriver || _canUninstallAdrenalin);
+        InstallOptionsPanel.Visibility = Visibility.Visible;
         InstallOptionsPanel.IsEnabled = !busy;
     }
 
