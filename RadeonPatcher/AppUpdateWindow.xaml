@@ -13,7 +13,8 @@
         <TextBlock FontSize="20" FontWeight="SemiBold" Text="RadeonPatcher update available"/>
         <StackPanel Grid.Row="1" Margin="0,18,0,18">
             <TextBlock Foreground="{DynamicResource SecondaryTextBrush}" Text="A newer verified GitHub release is available." Margin="0,0,0,14"/>
-            <Grid Background="{DynamicResource PanelBackgroundBrush}">
+            <Border Background="{DynamicResource PanelBackgroundBrush}" CornerRadius="8">
+            <Grid>
                 <Grid.Resources>
                     <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}"/>
                 </Grid.Resources>
@@ -30,9 +31,10 @@
                     <TextBlock x:Name="LatestVersionText" Margin="0,3,0,0" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource LogoBrush}"/>
                 </StackPanel>
             </Grid>
+            </Border>
             <StackPanel x:Name="ReleaseNotesPanel" Margin="0,16,0,0" Visibility="Collapsed">
                 <TextBlock FontWeight="SemiBold" Text="What's changed" Margin="0,0,0,8"/>
-                <Border Background="{DynamicResource PanelBackgroundBrush}" Padding="12,8">
+                <Border Background="{DynamicResource PanelBackgroundBrush}" CornerRadius="8" Padding="12,8">
                     <ScrollViewer MaxHeight="220" VerticalScrollBarVisibility="Auto">
                         <TextBlock x:Name="ReleaseNotesText" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" LineHeight="20"/>
                     </ScrollViewer>
