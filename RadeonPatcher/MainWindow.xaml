@@ -559,6 +559,7 @@
         </Grid>
 
         <DockPanel Grid.Row="3" Margin="0,14,0,0" LastChildFill="False">
+            <Button x:Name="AboutButton" DockPanel.Dock="Left" Width="90" Height="38" Margin="0,0,10,0" Content="About" Click="AboutButton_Click"/>
             <ProgressBar x:Name="Progress" DockPanel.Dock="Left" Width="120" Height="20" IsIndeterminate="False" Visibility="Hidden" Style="{StaticResource AppProgressBar}"/>
             <Button x:Name="InstallButton" DockPanel.Dock="Right" Width="135" Height="38" Content="Install" Style="{StaticResource AccentDialogButtonStyle}" Click="InstallButton_Click"/>
             <Button x:Name="ToggleMpoButton" DockPanel.Dock="Right" Width="135" Height="38" Margin="0,0,10,0" Click="ToggleMpoButton_Click" ToolTip="Enables or removes the MPO registry override. Restart or sign out/in after changing it. MPO Off is Recommended.">

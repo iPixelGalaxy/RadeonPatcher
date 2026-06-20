@@ -468,6 +468,9 @@ public partial class MainWindow : Window
 
     private void ClearLogButton_Click(object sender, RoutedEventArgs e) => LogBox.Clear();
 
+    private void AboutButton_Click(object sender, RoutedEventArgs e) =>
+        new AboutWindow { Owner = this }.ShowDialog();
+
     private void UpdateSelectedDriverText()
     {
         if (DriverCombo.SelectedItem is not DriverRelease driver)
@@ -615,6 +618,7 @@ public partial class MainWindow : Window
         RefreshButton.IsEnabled = !busy;
         ClearDownloadCacheButton.IsEnabled = !busy && _hasDownloadCache;
         ThemeCombo.IsEnabled = !busy;
+        AboutButton.IsEnabled = !busy;
         InstallButton.IsEnabled = !busy;
         ToggleMpoButton.IsEnabled = !busy;
         UpdateCheckServiceButton.IsEnabled = !busy;
