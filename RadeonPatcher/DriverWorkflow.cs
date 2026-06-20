@@ -1285,10 +1285,25 @@ public sealed class DriverWorkflow : IDisposable
     private static async Task<string> RunPowerShellAsync(string script)
     {
         var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
-        var output = new StringBuilder();
-        var exit = await RunProcessCaptureAsync("powershell.exe", $"-NoProfile -ExecutionPolicy Bypass -EncodedCommand {encoded}", output);
-        if (exit != 0) throw new InvalidOperationException(CleanPowerShellOutput(output.ToString()));
-        return output.ToString();
+        var start = new ProcessStartInfo("powershell.exe", $"-NoProfile -ExecutionPolicy Bypass -EncodedCommand {encoded}")
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true
+        };
+        using var process = Process.Start(start) ?? throw new InvalidOperationException("Could not start PowerShell.");
+        var standardOutput = process.StandardOutput.ReadToEndAsync();
+        var standardError = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        var output = await standardOutput;
+        var error = await standardError;
+        if (process.ExitCode != 0)
+        {
+            throw new InvalidOperationException(CleanPowerShellOutput(string.IsNullOrWhiteSpace(error) ? output : error));
+        }
+
+        return output;
     }
 
     private static string CleanPowerShellOutput(string output)
