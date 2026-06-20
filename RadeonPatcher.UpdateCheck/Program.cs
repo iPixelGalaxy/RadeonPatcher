@@ -96,29 +96,52 @@ internal static class Program
             .OrderByDescending(receipt => receipt.InstalledAt).FirstOrDefault()?.PackageVersion;
     }
 
-    private static async Task ShowNotificationAsync(string title, string message)
+    private static Task ShowNotificationAsync(string title, string message)
     {
         var applicationPath = ResolveLastApplicationPath();
-        using var icon = new Forms.NotifyIcon
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var thread = new Thread(() =>
         {
-            Icon = System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath ?? Forms.Application.ExecutablePath),
-            Visible = true,
-            Text = "RadeonPatcher"
-        };
-        icon.BalloonTipClicked += (_, _) =>
-        {
-            if (applicationPath is null) return;
             try
             {
-                Process.Start(new ProcessStartInfo(applicationPath) { UseShellExecute = true });
+                using var context = new Forms.ApplicationContext();
+                using var icon = new Forms.NotifyIcon
+                {
+                    Icon = System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath ?? Forms.Application.ExecutablePath),
+                    Visible = true,
+                    Text = "RadeonPatcher"
+                };
+                using var timer = new Forms.Timer { Interval = 11000 };
+                timer.Tick += (_, _) => context.ExitThread();
+                icon.BalloonTipClicked += (_, _) =>
+                {
+                    if (applicationPath is not null)
+                    {
+                        try
+                        {
+                            Process.Start(new ProcessStartInfo(applicationPath) { UseShellExecute = true });
+                        }
+                        catch
+                        {
+                            // A stale or inaccessible application path should not crash the checker.
+                        }
+                    }
+                    context.ExitThread();
+                };
+                icon.ShowBalloonTip(10000, title, message, Forms.ToolTipIcon.Info);
+                timer.Start();
+                Forms.Application.Run(context);
+                icon.Visible = false;
+                completion.SetResult();
             }
-            catch
+            catch (Exception ex)
             {
-                // A stale or inaccessible application path should not crash the checker.
+                completion.SetException(ex);
             }
-        };
-        icon.ShowBalloonTip(10000, title, message, Forms.ToolTipIcon.Info);
-        await Task.Delay(11000);
+        }) { IsBackground = false };
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        return completion.Task;
     }
 
     private static string? ResolveLastApplicationPath()
