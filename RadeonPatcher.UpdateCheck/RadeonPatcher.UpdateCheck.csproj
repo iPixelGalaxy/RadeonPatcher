@@ -6,6 +6,7 @@
     <SelfContained>true</SelfContained>
     <PublishAot>false</PublishAot>
     <PublishSingleFile>true</PublishSingleFile>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <PublishTrimmed>false</PublishTrimmed>
     <AssemblyName>RadeonPatcherUpdateCheck</AssemblyName>
     <ApplicationIcon>..\RadeonPatcher\Resources\AMDSoftwareConsumer.ico</ApplicationIcon>
