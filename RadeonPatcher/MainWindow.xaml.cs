@@ -304,10 +304,6 @@ public partial class MainWindow : Window
         await Busy(async () =>
         {
             await _workflow.UninstallDriverAndSoftwareAsync(_hardware ?? await _workflow.GetHardwareInfoAsync(), Log);
-            if (removeAudio)
-            {
-                await _workflow.UninstallAudioDriverAsync(Log);
-            }
             await _workflow.RemoveLocalSigningCertificateAsync(Log);
             Log("AMD driver and software removal finished.");
             removed = true;

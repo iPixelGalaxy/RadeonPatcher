@@ -330,7 +330,8 @@ public sealed class DriverWorkflow : IDisposable
             await RemoveAdrenalinCoreAsync(log);
         }
 
-        await UninstallDisplayDriverCoreAsync(hardware, log);
+        await UninstallAmdDriverPackagesAsync("Display", "display", log);
+        await UninstallAmdDriverPackagesAsync("MEDIA", "HD Audio", log);
     }
 
     public async Task RemoveLocalSigningCertificateAsync(Action<string> log)
@@ -377,6 +378,30 @@ public sealed class DriverWorkflow : IDisposable
 
         log($"Removing active display driver package: {activeInf}");
         await RunProcessAsync("pnputil.exe", $"/delete-driver {activeInf} /uninstall /force", log, allowAlreadyRemoved: true);
+    }
+
+    private async Task UninstallAmdDriverPackagesAsync(string deviceClass, string componentName, Action<string> log)
+    {
+        var output = await RunPowerShellAsync($$"""
+            Get-WindowsDriver -Online -All |
+              Where-Object { $_.ClassName -eq '{{deviceClass}}' -and $_.ProviderName -match 'AMD|Advanced Micro Devices' } |
+              Select-Object -ExpandProperty PublishedName
+            """);
+        var packages = Regex.Matches(output, @"\boem\d+\.inf\b", RegexOptions.IgnoreCase)
+            .Select(match => match.Value)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (packages.Count == 0)
+        {
+            log($"No staged AMD {componentName} driver packages were found.");
+            return;
+        }
+
+        foreach (var package in packages)
+        {
+            log($"Removing AMD {componentName} driver package: {package}");
+            await RunProcessAsync("pnputil.exe", $"/delete-driver {package} /uninstall /force", log, allowAlreadyRemoved: true);
+        }
     }
 
     private async Task RemoveAdrenalinCoreAsync(Action<string> log)
