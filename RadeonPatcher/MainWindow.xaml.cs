@@ -308,6 +308,7 @@ public partial class MainWindow : Window
             {
                 await _workflow.UninstallAudioDriverAsync(Log);
             }
+            await _workflow.RemoveLocalSigningCertificateAsync(Log);
             Log("AMD driver and software removal finished.");
             removed = true;
         });

@@ -36,7 +36,7 @@ Updates are downloaded only from that repository's GitHub Release asset path. Ra
 
 ## Driver Update Checker
 
-The **Install Update Check Service** button registers a scheduled task named `RadeonPatcher Update Check`. A small dedicated checker launches the application's background driver check at Windows startup and once every 24 hours. New driver availability produces a Windows notification; drivers are never installed automatically.
+The **Install Update Check Service** button registers a non-elevated scheduled task named `RadeonPatcher Update Check`. RadeonPatcher must be installed outside user-writable folders (such as Downloads or Desktop); use a protected location such as Program Files. A small dedicated checker launches the application's background driver check at Windows startup and once every 24 hours. New driver availability produces a Windows notification; drivers are never installed automatically.
 
 ## Verified Releases
 
@@ -63,3 +63,5 @@ The published executable is written to the repository root as `RadeonPatcher.exe
 ## Notes
 
 RadeonPatcher requires administrator rights for driver installation, certificate trust, scheduled-task registration, and component removal. Review selected options before changing installed drivers.
+
+Server compatibility patching creates a non-exportable, two-year local code-signing certificate named `AMD Driver Modding Authority`. Its trust is added only to the machine Root and TrustedPublisher stores. **Uninstall All** removes that certificate from the machine certificate stores.

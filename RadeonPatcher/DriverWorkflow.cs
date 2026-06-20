@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace RadeonPatcher;
@@ -61,8 +62,8 @@ public sealed record UpdateCheckResult(
 public sealed class DriverWorkflow : IDisposable
 {
     private static readonly Regex DriverUrlRegex = new(@"https://drivers\.amd\.com/drivers/[^""'<>\s\\]+?\.exe", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex HtmlTagRegex = new("<.*?>", RegexOptions.Compiled);
-    private readonly HttpClient _http = new();
+    private static readonly Regex HtmlTagRegex = new("<.*?>", RegexOptions.Compiled | RegexOptions.Singleline);
+    private readonly HttpClient _http = new() { Timeout = TimeSpan.FromMinutes(10) };
     private readonly Dictionary<string, IReadOnlyList<DriverRelease>> _driverCache = new(StringComparer.OrdinalIgnoreCase);
 
     public string WorkRoot { get; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "RadeonPatcher");
@@ -142,7 +143,10 @@ public sealed class DriverWorkflow : IDisposable
               IsAdrenalinInstalled=$adrenalinInstalled
             } | ConvertTo-Json -Compress
             """);
-        var hardware = SimpleJson.ParseHardware(display.Trim());
+        var hardware = JsonSerializer.Deserialize<HardwareInfo>(display.Trim(), new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        }) ?? throw new InvalidOperationException("PowerShell returned invalid hardware information.");
         return hardware with
         {
             GpuName = GpuModelDatabase.ResolveName(hardware.GpuInstanceId, hardware.GpuName),
@@ -327,6 +331,20 @@ public sealed class DriverWorkflow : IDisposable
         }
 
         await UninstallDisplayDriverCoreAsync(hardware, log);
+    }
+
+    public async Task RemoveLocalSigningCertificateAsync(Action<string> log)
+    {
+        const string subject = "CN=AMD Driver Modding Authority";
+        await RunPowerShellAsync($$"""
+            $subject = '{{subject}}'
+            foreach ($store in 'Cert:\LocalMachine\My','Cert:\LocalMachine\Root','Cert:\LocalMachine\TrustedPublisher') {
+              Get-ChildItem $store -ErrorAction SilentlyContinue |
+                Where-Object { $_.Subject -eq $subject } |
+                Remove-Item -Force -ErrorAction SilentlyContinue
+            }
+            """);
+        log("Removed the local AMD Driver Modding Authority certificate from machine certificate stores.");
     }
 
     public async Task UninstallDisplayDriverAsync(HardwareInfo hardware, Action<string> log)
@@ -549,10 +567,15 @@ public sealed class DriverWorkflow : IDisposable
             $triggers += New-ScheduledTaskTrigger -AtStartup
             $triggers += New-ScheduledTaskTrigger -Daily -At '{{startTime}}'
             $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 15)
-            $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Highest
+            $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive
             Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $triggers -Settings $settings -Principal $principal -Force | Out-Null
             """;
-        log("Installing update check scheduled task.");
+        if (IsUserWritableLocation(processPath))
+        {
+            throw new InvalidOperationException("Update checks require RadeonPatcher to be installed outside a user-writable folder. Move it to a protected location such as Program Files first.");
+        }
+
+        log("Installing non-elevated update check scheduled task.");
         await RunPowerShellAsync(script);
         log("Update check service installed. It will run at Windows boot and once every 24 hours.");
     }
@@ -584,8 +607,15 @@ public sealed class DriverWorkflow : IDisposable
         var destination = Path.Combine(DownloadsRoot, Path.GetFileName(new Uri(driver.DownloadUrl).AbsolutePath));
         if (File.Exists(destination) && !force && new FileInfo(destination).Length > 50 * 1024 * 1024)
         {
-            log($"Using existing download: {destination}");
-            return destination;
+            var valid = await RunProcessAsync(Path.Combine(ToolsRoot, "7z.exe"), $"t \"{destination}\"", log, throwOnError: false) == 0;
+            if (valid)
+            {
+                log($"Using verified existing download: {destination}");
+                return destination;
+            }
+
+            log("Existing driver download failed integrity verification; downloading it again.");
+            File.Delete(destination);
         }
 
         log($"Downloading {driver.DownloadUrl}");
@@ -595,15 +625,26 @@ public sealed class DriverWorkflow : IDisposable
         using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
         await using var source = await response.Content.ReadAsStreamAsync();
-        await using var target = File.Create(destination);
-        await source.CopyToAsync(target);
-
-        if (new FileInfo(destination).Length < 50 * 1024 * 1024)
+        var temporaryDestination = destination + ".partial";
+        try
         {
-            throw new InvalidOperationException($"Downloaded file is too small to be an AMD driver package: {destination}");
-        }
+            await using (var target = File.Create(temporaryDestination))
+            {
+                await source.CopyToAsync(target);
+            }
 
-        return destination;
+            if (new FileInfo(temporaryDestination).Length < 50 * 1024 * 1024)
+            {
+                throw new InvalidOperationException($"Downloaded file is too small to be an AMD driver package: {destination}");
+            }
+
+            File.Move(temporaryDestination, destination, true);
+            return destination;
+        }
+        finally
+        {
+            if (File.Exists(temporaryDestination)) File.Delete(temporaryDestination);
+        }
     }
 
     private async Task<string> ExtractPackageAsync(string packageExe, Action<string> log)
@@ -1129,11 +1170,11 @@ public sealed class DriverWorkflow : IDisposable
               Sort-Object NotAfter -Descending |
               Select-Object -First 1
             if (-not $cert) {
-              $cert = New-SelfSignedCertificate -Subject $subject -Type CodeSigningCert -CertStoreLocation Cert:\LocalMachine\My -KeyExportPolicy NonExportable -KeyUsage DigitalSignature -KeyLength 2048 -HashAlgorithm SHA256 -NotAfter (Get-Date).AddYears(10)
+              $cert = New-SelfSignedCertificate -Subject $subject -Type CodeSigningCert -CertStoreLocation Cert:\LocalMachine\My -KeyExportPolicy NonExportable -KeyUsage DigitalSignature -KeyLength 2048 -HashAlgorithm SHA256 -NotAfter (Get-Date).AddYears(2)
             }
             $cer = Join-Path $env:TEMP 'AMDDriverModdingAuthority.cer'
             Export-Certificate -Cert $cert -FilePath $cer -Force | Out-Null
-            foreach ($store in 'Cert:\LocalMachine\Root','Cert:\LocalMachine\TrustedPublisher','Cert:\CurrentUser\Root','Cert:\CurrentUser\TrustedPublisher') {
+            foreach ($store in 'Cert:\LocalMachine\Root','Cert:\LocalMachine\TrustedPublisher') {
               Import-Certificate -FilePath $cer -CertStoreLocation $store | Out-Null
             }
             [Console]::Out.WriteLine($cert.Thumbprint)
@@ -1304,7 +1345,15 @@ public sealed class DriverWorkflow : IDisposable
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
         await process.WaitForExitAsync();
+        process.WaitForExit();
         return process.ExitCode;
+    }
+
+    private static bool IsUserWritableLocation(string path)
+    {
+        var fullPath = Path.GetFullPath(path);
+        var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        return fullPath.StartsWith(userProfile + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
     }
 
     private const uint InstallFlagForce = 0x00000001;
@@ -1319,31 +1368,4 @@ public sealed class DriverWorkflow : IDisposable
         out bool rebootRequired);
 
     public void Dispose() => _http.Dispose();
-}
-
-internal static class SimpleJson
-{
-    public static HardwareInfo ParseHardware(string json)
-    {
-        static string? Value(string json, string name)
-        {
-            var match = Regex.Match(json, $"\"{name}\"\\s*:\\s*(?:\"(?<v>(?:\\\\.|[^\"])*)\"|(?<v>true|false|null))", RegexOptions.IgnoreCase);
-            if (!match.Success || match.Groups["v"].Value == "null") return null;
-            return Regex.Unescape(match.Groups["v"].Value);
-        }
-
-        return new HardwareInfo(
-            Value(json, "GpuName"),
-            Value(json, "GpuInstanceId"),
-            Value(json, "DisplayDriverVersion"),
-            Value(json, "DisplayDriverOriginalInf"),
-            Value(json, "DisplayDriverPackageVersion"),
-            Value(json, "AudioDriverVersion"),
-            Value(json, "OsName") ?? "Windows",
-            Value(json, "OsVersion") ?? "",
-            string.Equals(Value(json, "IsServer"), "true", StringComparison.OrdinalIgnoreCase),
-            string.Equals(Value(json, "IsMpoDisabled"), "true", StringComparison.OrdinalIgnoreCase),
-            string.Equals(Value(json, "IsUpdateCheckServiceInstalled"), "true", StringComparison.OrdinalIgnoreCase),
-            string.Equals(Value(json, "IsAdrenalinInstalled"), "true", StringComparison.OrdinalIgnoreCase));
-    }
 }

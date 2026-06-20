@@ -65,7 +65,7 @@ public partial class App : System.Windows.Application
             var result = await workflow.CheckForUpdatesAsync(_ => { });
             if (result.UpdateAvailable && result.LatestDriver is not null)
             {
-                ShowNotification(
+                await ShowNotification(
                     "AMD driver update available",
                     $"Version {result.LatestDriver.VersionText} is available. Installed: {result.CurrentVersion ?? "unknown"}.");
             }
@@ -76,7 +76,7 @@ public partial class App : System.Windows.Application
         }
     }
 
-    private static void ShowNotification(string title, string message)
+    private static async Task ShowNotification(string title, string message)
     {
         using var icon = new Forms.NotifyIcon
         {
@@ -87,7 +87,7 @@ public partial class App : System.Windows.Application
 
         System.Media.SystemSounds.Exclamation.Play();
         icon.ShowBalloonTip(10000, title, message, Forms.ToolTipIcon.Info);
-        Thread.Sleep(11000);
+        await Task.Delay(11000);
         icon.Visible = false;
     }
 }
