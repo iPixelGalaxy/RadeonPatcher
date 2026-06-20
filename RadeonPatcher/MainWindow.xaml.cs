@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     private bool _canUninstallGpuDriver;
     private bool _canUninstallAudioDriver;
     private bool _canUninstallAdrenalin;
+    private int _busyOperationCount;
 
     public MainWindow()
     {
@@ -327,7 +328,6 @@ public partial class MainWindow : Window
     {
         await Busy(() => _workflow.ClearDownloadCacheAsync(Log));
         _hasDownloadCache = false;
-        SetBusy(false);
     }
 
     private async void UninstallGpuDriverButton_Click(object sender, RoutedEventArgs e)
@@ -583,9 +583,13 @@ public partial class MainWindow : Window
 
     private async Task Busy(Func<Task> action)
     {
+        if (Interlocked.Increment(ref _busyOperationCount) == 1)
+        {
+            ApplyBusyState(true);
+        }
+
         try
         {
-            SetBusy(true);
             await action();
         }
         catch (Exception ex)
@@ -595,11 +599,14 @@ public partial class MainWindow : Window
         }
         finally
         {
-            SetBusy(false);
+            if (Interlocked.Decrement(ref _busyOperationCount) == 0)
+            {
+                ApplyBusyState(false);
+            }
         }
     }
 
-    private void SetBusy(bool busy)
+    private void ApplyBusyState(bool busy)
     {
         Progress.Visibility = busy ? Visibility.Visible : Visibility.Hidden;
         Progress.IsIndeterminate = busy;
