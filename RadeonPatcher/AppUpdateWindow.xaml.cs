@@ -11,6 +11,11 @@ public partial class AppUpdateWindow : Window
         InitializeComponent();
         CurrentVersionText.Text = Format(update.CurrentVersion);
         LatestVersionText.Text = Format(update.LatestVersion);
+        if (update.ReleaseNotes.Count > 0)
+        {
+            ReleaseNotesText.Text = string.Join(Environment.NewLine, update.ReleaseNotes.Select(note => $"• {note}"));
+            ReleaseNotesPanel.Visibility = Visibility.Visible;
+        }
         SourceInitialized += (_, _) => DialogTheme.ApplyTitleBar(this);
     }
 

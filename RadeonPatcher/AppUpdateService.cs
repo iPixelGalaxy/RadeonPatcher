@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
+using System.Net.Http.Json;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -8,11 +9,17 @@ using System.Text.Json.Serialization;
 
 namespace RadeonPatcher;
 
-public sealed record AppUpdateInfo(Version CurrentVersion, Version LatestVersion, string DownloadUrl, string ChecksumUrl);
+public sealed record AppUpdateInfo(
+    Version CurrentVersion,
+    Version LatestVersion,
+    string DownloadUrl,
+    string ChecksumUrl,
+    IReadOnlyList<string> ReleaseNotes);
 
 public static class AppUpdateService
 {
     private const string LatestReleaseUrl = "https://api.github.com/repos/iPixelGalaxy/RadeonPatcher/releases/latest";
+    private const string ReleasesUrl = "https://api.github.com/repos/iPixelGalaxy/RadeonPatcher/releases?per_page=100";
     private const string UpstreamOwner = "iPixelGalaxy";
     private const string UpstreamRepository = "RadeonPatcher";
 
@@ -38,7 +45,8 @@ public static class AppUpdateService
 
         // The trust anchor is the upstream GitHub repository. Its checksum detects
         // accidental transport corruption; it does not independently authenticate a release.
-        return new AppUpdateInfo(CurrentVersion, latest, executable.DownloadUrl, checksum.DownloadUrl);
+        var releaseNotes = await LoadReleaseNotesAsync(client, latest);
+        return new AppUpdateInfo(CurrentVersion, latest, executable.DownloadUrl, checksum.DownloadUrl, releaseNotes);
     }
 
     public static async Task DownloadAndRestartAsync(AppUpdateInfo update)
@@ -92,6 +100,33 @@ public static class AppUpdateService
     private static bool TryParseVersion(string tag, out Version version) =>
         Version.TryParse(tag.Trim().TrimStart('v', 'V').Split('-')[0], out version!);
 
+    private static async Task<IReadOnlyList<string>> LoadReleaseNotesAsync(HttpClient client, Version latest)
+    {
+        try
+        {
+            var releases = await client.GetFromJsonAsync<ReleaseResponse[]>(ReleasesUrl) ?? [];
+            return releases
+                .Select(release => new { Release = release, Parsed = TryParseVersion(release.TagName, out var version), Version = version })
+                .Where(item => item.Parsed && !item.Release.Draft && !item.Release.Prerelease &&
+                    item.Version > CurrentVersion && item.Version <= latest)
+                .OrderBy(item => item.Version)
+                .SelectMany(item => ExtractBulletNotes(item.Release.Body)
+                    .Select(note => $"{item.Version.Major}.{item.Version.Minor}.{item.Version.Build}: {note}"))
+                .ToList();
+        }
+        catch
+        {
+            // Release notes are supplementary and must not block an available update.
+            return [];
+        }
+    }
+
+    private static IEnumerable<string> ExtractBulletNotes(string? body) =>
+        (body ?? "").Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.TrimStart())
+            .Where(line => line.StartsWith("- ", StringComparison.Ordinal) && line.Length > 2)
+            .Select(line => line[2..].Trim());
+
     internal static bool IsTrustedReleaseAssetUrl(string value)
     {
         if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
@@ -107,7 +142,10 @@ public static class AppUpdateService
 
     private sealed record ReleaseResponse(
         [property: JsonPropertyName("tag_name")] string TagName,
-        [property: JsonPropertyName("assets")] ReleaseAsset[] Assets);
+        [property: JsonPropertyName("assets")] ReleaseAsset[] Assets,
+        [property: JsonPropertyName("body")] string? Body,
+        [property: JsonPropertyName("draft")] bool Draft,
+        [property: JsonPropertyName("prerelease")] bool Prerelease);
 
     private sealed record ReleaseAsset(
         [property: JsonPropertyName("name")] string Name,
