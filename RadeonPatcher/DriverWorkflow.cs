@@ -363,7 +363,7 @@ public sealed class DriverWorkflow : IDisposable
         }
 
         log($"Removing active AMD HD Audio driver package: {activeInf}");
-        await RunProcessAsync("pnputil.exe", $"/delete-driver {activeInf} /uninstall /force", log);
+        await RunProcessAsync("pnputil.exe", $"/delete-driver {activeInf} /uninstall /force", log, allowAlreadyRemoved: true);
     }
 
     private static async Task UninstallDisplayDriverCoreAsync(HardwareInfo hardware, Action<string> log)
@@ -376,7 +376,7 @@ public sealed class DriverWorkflow : IDisposable
         }
 
         log($"Removing active display driver package: {activeInf}");
-        await RunProcessAsync("pnputil.exe", $"/delete-driver {activeInf} /uninstall /force", log);
+        await RunProcessAsync("pnputil.exe", $"/delete-driver {activeInf} /uninstall /force", log, allowAlreadyRemoved: true);
     }
 
     private async Task RemoveAdrenalinCoreAsync(Action<string> log)
@@ -1320,13 +1320,19 @@ public sealed class DriverWorkflow : IDisposable
         return messages.Count == 0 ? output : string.Join("", messages);
     }
 
-    private static async Task<int> RunProcessAsync(string fileName, string arguments, Action<string> log, string? workingDirectory = null, bool throwOnError = true, bool allowNoUpdate = false)
+    private static async Task<int> RunProcessAsync(string fileName, string arguments, Action<string> log, string? workingDirectory = null, bool throwOnError = true, bool allowNoUpdate = false, bool allowAlreadyRemoved = false)
     {
         var output = new StringBuilder();
         var exit = await RunProcessCaptureAsync(fileName, arguments, output, workingDirectory, log);
         var text = output.ToString();
         if (allowNoUpdate && exit == 259 && (text.Contains("up-to-date on device", StringComparison.OrdinalIgnoreCase) || text.Contains("Added driver packages:  0", StringComparison.OrdinalIgnoreCase)))
         {
+            return exit;
+        }
+
+        if (allowAlreadyRemoved && text.Contains("not an installed OEM INF", StringComparison.OrdinalIgnoreCase))
+        {
+            log("Driver package was already removed from the driver store.");
             return exit;
         }
 
