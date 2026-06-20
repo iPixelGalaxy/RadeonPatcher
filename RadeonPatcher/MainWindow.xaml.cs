@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Windows;
@@ -201,7 +202,8 @@ public partial class MainWindow : Window
                 {
                     await Task.Delay(1000);
                     var hardware = await _workflow.GetHardwareInfoAsync();
-                    var displayReady = !expectDisplay || hardware.DisplayDriverVersion is not null;
+                    var displayReady = !expectDisplay ||
+                        (hardware.DisplayDriverVersion is not null && hardware.DisplayDriverPackageVersion is not null);
                     var audioReady = !expectAudio || hardware.AudioDriverVersion is not null;
                     if (displayReady && audioReady)
                     {
@@ -213,6 +215,10 @@ public partial class MainWindow : Window
 
         Log("Refreshing installed driver versions.");
         await RefreshAsync();
+        if (expectDisplay || expectAudio)
+        {
+            PromptForRestart("Driver installation finished", "Restart Windows to finish applying the installed AMD drivers.");
+        }
     }
 
     private async void UpdateCheckServiceButton_Click(object sender, RoutedEventArgs e)
@@ -242,12 +248,17 @@ public partial class MainWindow : Window
             return;
         }
 
+        var removed = false;
         await Busy(async () =>
         {
             await _workflow.UninstallDisplayDriverAsync(_hardware ?? await _workflow.GetHardwareInfoAsync(), Log);
             Log("AMD display driver removal finished.");
+            removed = true;
         });
-        await RefreshAsync();
+        if (removed)
+        {
+            await RefreshAfterDriverRemovalAsync(expectDisplayRemoved: true, expectAudioRemoved: false);
+        }
     }
 
     private async void UninstallAudioDriverButton_Click(object sender, RoutedEventArgs e)
@@ -257,8 +268,16 @@ public partial class MainWindow : Window
             return;
         }
 
-        await Busy(() => _workflow.UninstallAudioDriverAsync(Log));
-        await RefreshAsync();
+        var removed = false;
+        await Busy(async () =>
+        {
+            await _workflow.UninstallAudioDriverAsync(Log);
+            removed = true;
+        });
+        if (removed)
+        {
+            await RefreshAfterDriverRemovalAsync(expectDisplayRemoved: false, expectAudioRemoved: true);
+        }
     }
 
     private async void UninstallAdrenalinButton_Click(object sender, RoutedEventArgs e)
@@ -279,16 +298,60 @@ public partial class MainWindow : Window
             return;
         }
 
+        var removeDisplay = _canUninstallGpuDriver;
+        var removeAudio = _canUninstallAudioDriver;
+        var removed = false;
         await Busy(async () =>
         {
             await _workflow.UninstallDriverAndSoftwareAsync(_hardware ?? await _workflow.GetHardwareInfoAsync(), Log);
-            if (_canUninstallAudioDriver)
+            if (removeAudio)
             {
                 await _workflow.UninstallAudioDriverAsync(Log);
             }
             Log("AMD driver and software removal finished.");
+            removed = true;
         });
+        if (removed && (removeDisplay || removeAudio))
+        {
+            await RefreshAfterDriverRemovalAsync(removeDisplay, removeAudio);
+        }
+        else if (removed)
+        {
+            await RefreshAsync();
+        }
+    }
+
+    private async Task RefreshAfterDriverRemovalAsync(bool expectDisplayRemoved, bool expectAudioRemoved)
+    {
+        Log("Waiting for Windows to refresh removed driver information.");
+        await Busy(async () =>
+        {
+            for (var attempt = 0; attempt < 10; attempt++)
+            {
+                await Task.Delay(1000);
+                var hardware = await _workflow.GetHardwareInfoAsync();
+                var displayRemoved = !expectDisplayRemoved || hardware.DisplayDriverVersion is null;
+                var audioRemoved = !expectAudioRemoved || hardware.AudioDriverVersion is null;
+                if (displayRemoved && audioRemoved)
+                {
+                    break;
+                }
+            }
+        });
+
+        Log("Refreshing installed driver versions.");
         await RefreshAsync();
+        PromptForRestart("Driver removal finished", "Restart Windows to finish removing the AMD drivers.");
+    }
+
+    private void PromptForRestart(string heading, string message)
+    {
+        if (!AppDialog.Confirm(this, heading, message, "Restart Now", "Later"))
+        {
+            return;
+        }
+
+        Process.Start(new ProcessStartInfo("shutdown.exe", "/r /t 0") { UseShellExecute = true });
     }
 
     private bool ConfirmUninstall(string message) => AppDialog.Confirm(this, "Confirm removal", message);

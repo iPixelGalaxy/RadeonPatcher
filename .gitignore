@@ -5,6 +5,7 @@ publish/
 artifacts/
 /RadeonPatcher.exe
 /RadeonPatcher.pdb
+RadeonPatcher/obj-check/
 
 ## Visual Studio / Rider / VS Code
 .vs/

@@ -112,7 +112,7 @@ public sealed class DriverWorkflow : IDisposable
             $signedDrivers = Get-CimInstance Win32_PnPSignedDriver
             $drv = $signedDrivers | Where-Object { $_.DeviceClass -eq 'DISPLAY' -and ($_.DeviceID -match 'VEN_1002' -or $_.DeviceName -match 'AMD|Radeon') } | Select-Object -First 1
             $aud = $signedDrivers | Where-Object { $_.DeviceClass -eq 'MEDIA' -and ($_.DeviceID -match 'HDAUDIO\\FUNC_01&VEN_1002&DEV_AA01' -or $_.DeviceName -match 'AMD High Definition Audio') } | Select-Object -First 1
-            $hasAmdDisplayDriver = $drv -and $drv.DriverProviderName -match 'AMD|Advanced Micro Devices' -and $drv.InfName -notmatch '^display\.inf$'
+            $hasAmdDisplayDriver = $drv -and $gpu.Service -match 'amdwddmg|amdkmdag' -and $drv.DriverProviderName -match 'AMD|Advanced Micro Devices' -and $drv.InfName -notmatch '^display\.inf$'
             $hasAmdAudioDriver = $aud -and $aud.DriverProviderName -match 'AMD|Advanced Micro Devices' -and $aud.InfName -notmatch '^hdaudio\.inf$'
             $os = Get-CimInstance Win32_OperatingSystem
             $windowsVersion = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction SilentlyContinue
@@ -122,7 +122,7 @@ public sealed class DriverWorkflow : IDisposable
             try { $mpoDisabled = ((Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\Dwm' -ErrorAction SilentlyContinue).OverlayTestMode -eq 5) } catch {}
             $updateCheckInstalled = $null -ne (Get-ScheduledTask -TaskName 'RadeonPatcher Update Check' -ErrorAction SilentlyContinue)
             $adrenalinInstalled = Test-Path -LiteralPath 'C:\Program Files\AMD\CNext\CNext\RadeonSoftware.exe'
-            $originalInf = $null
+            $originalInf = if ($hasAmdDisplayDriver) { $drv.InfName } else { $null }
             if ($hasAmdDisplayDriver -and $gpu.Service) {
               $service = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\$($gpu.Service)" -ErrorAction SilentlyContinue
               $match = [regex]::Match([string]$service.ImagePath, '\\(?<inf>[^\\]+\.inf)_amd64_', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
@@ -711,19 +711,27 @@ public sealed class DriverWorkflow : IDisposable
 
     private string? ResolvePackageVersion(HardwareInfo hardware)
     {
-        if (string.IsNullOrWhiteSpace(hardware.GpuInstanceId) || string.IsNullOrWhiteSpace(hardware.DisplayDriverOriginalInf))
+        if (string.IsNullOrWhiteSpace(hardware.GpuInstanceId) || string.IsNullOrWhiteSpace(hardware.DisplayDriverVersion))
         {
             return null;
         }
 
-        var receipt = DriverInstallReceiptStore.Load()
+        var receipts = DriverInstallReceiptStore.Load()
+            .Where(x => string.Equals(x.GpuInstanceId, hardware.GpuInstanceId, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(x => x.InstalledAt)
-            .FirstOrDefault(x =>
-                string.Equals(x.GpuInstanceId, hardware.GpuInstanceId, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(x.OriginalInf, hardware.DisplayDriverOriginalInf, StringComparison.OrdinalIgnoreCase));
+            .ToList();
+        var receipt = string.IsNullOrWhiteSpace(hardware.DisplayDriverOriginalInf)
+            ? receipts.FirstOrDefault()
+            : receipts.FirstOrDefault(x => string.Equals(x.OriginalInf, hardware.DisplayDriverOriginalInf, StringComparison.OrdinalIgnoreCase))
+                ?? receipts.FirstOrDefault();
         if (receipt is not null)
         {
             return receipt.PackageVersion;
+        }
+
+        if (string.IsNullOrWhiteSpace(hardware.DisplayDriverOriginalInf))
+        {
+            return null;
         }
 
         var packageMap = DriverPackageMapStore.Load()
