@@ -159,6 +159,7 @@ public partial class MainWindow : Window
     {
         var installed = false;
         InstallRequest? completedRequest = null;
+        InstallResult? completedResult = null;
         await Busy(async () =>
         {
             var hardware = _hardware ?? await _workflow.GetHardwareInfoAsync();
@@ -177,47 +178,65 @@ public partial class MainWindow : Window
                         : AudioInstallSource.DriverPackage,
                 AutoClearDownloadCacheCheck.IsChecked == true);
 
-            await _workflow.InstallAsync(request, Log);
+            completedResult = await _workflow.InstallAsync(request, Log);
             Log("Install workflow finished.");
             completedRequest = request;
             installed = true;
         });
 
-        if (installed && completedRequest is not null)
+        if (installed && completedRequest is not null && completedResult is not null)
         {
-            await RefreshAfterInstallAsync(completedRequest);
+            RememberInstalledVersions(completedResult);
+            await RefreshAfterInstallAsync(completedRequest, completedResult);
         }
     }
 
-    private async Task RefreshAfterInstallAsync(InstallRequest request)
+    private void RememberInstalledVersions(InstallResult result)
     {
-        var expectDisplay = request.InstallDisplayDriver;
-        var expectAudio = request.AudioInstallSource != AudioInstallSource.None;
-        if (expectDisplay || expectAudio)
-        {
-            Log("Waiting for Windows to refresh installed driver information.");
-            await Busy(async () =>
-            {
-                for (var attempt = 0; attempt < 30; attempt++)
-                {
-                    await Task.Delay(1000);
-                    var hardware = await _workflow.GetHardwareInfoAsync();
-                    var displayReady = !expectDisplay ||
-                        (hardware.DisplayDriverVersion is not null && hardware.DisplayDriverPackageVersion is not null);
-                    var audioReady = !expectAudio || hardware.AudioDriverVersion is not null;
-                    if (displayReady && audioReady)
-                    {
-                        break;
-                    }
-                }
-            });
-        }
+        if (result.DisplayPackageVersion is not null) _settings.LastInstalledDisplayPackageVersion = result.DisplayPackageVersion;
+        if (result.AudioDriverVersion is not null) _settings.LastInstalledAudioDriverVersion = result.AudioDriverVersion;
+        SaveSettings();
+    }
 
+    private async Task RefreshAfterInstallAsync(InstallRequest request, InstallResult result)
+    {
+        var expectDisplay = result.DisplayPackageVersion is not null;
+        var expectAudio = result.AudioDriverVersion is not null;
         Log("Refreshing installed driver versions.");
         await RefreshAsync();
+        if (expectDisplay)
+        {
+            DisplayDriverText.Text = $"Installed Video Driver: {result.DisplayPackageVersion} (pending Windows refresh)";
+        }
+        if (expectAudio) AudioText.Text = $"Installed AMD HD Audio Driver: {result.AudioDriverVersion} (pending Windows refresh)";
         if (expectDisplay || expectAudio)
         {
             PromptForRestart("Driver installation finished", "Restart Windows to finish applying the installed AMD drivers.");
+            _ = ObserveInstalledDriverStateAsync(expectDisplay, expectAudio);
+        }
+    }
+
+    private async Task ObserveInstalledDriverStateAsync(bool expectDisplay, bool expectAudio)
+    {
+        try
+        {
+            for (var attempt = 0; attempt < 30; attempt++)
+            {
+                await Task.Delay(1000);
+                var hardware = await _workflow.GetHardwareInfoAsync();
+                var displayReady = !expectDisplay || (hardware.DisplayDriverVersion is not null && hardware.DisplayDriverPackageVersion is not null);
+                var audioReady = !expectAudio || hardware.AudioDriverVersion is not null;
+                if (displayReady && audioReady)
+                {
+                    Log("Windows finished refreshing installed driver information.");
+                    await RefreshAsync();
+                    return;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log("Could not refresh installed driver information: " + ex.Message);
         }
     }
 

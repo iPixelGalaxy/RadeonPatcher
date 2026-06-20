@@ -58,6 +58,10 @@ public sealed record UpdateCheckResult(
     DriverRelease? LatestDriver,
     string Message);
 
+public sealed record InstallResult(
+    string? DisplayPackageVersion,
+    string? AudioDriverVersion);
+
 [SupportedOSPlatform("windows")]
 public sealed class DriverWorkflow : IDisposable
 {
@@ -221,8 +225,10 @@ public sealed class DriverWorkflow : IDisposable
         return result;
     }
 
-    public async Task InstallAsync(InstallRequest request, Action<string> log)
+    public async Task<InstallResult> InstallAsync(InstallRequest request, Action<string> log)
     {
+        string? displayPackageVersion = null;
+        string? audioDriverVersion = null;
         await EnsurePayloadsAsync();
         if (request.Driver is not null)
         {
@@ -231,6 +237,7 @@ public sealed class DriverWorkflow : IDisposable
             if (request.InstallDisplayDriver)
             {
                 await InstallDisplayDriverAsync(packageRoot, request, log);
+                displayPackageVersion = request.Driver.VersionText;
             }
             if (request.InstallAdrenalin)
             {
@@ -238,13 +245,13 @@ public sealed class DriverWorkflow : IDisposable
             }
             if (request.AudioInstallSource == AudioInstallSource.DriverPackage)
             {
-                await InstallPackageAudioAsync(packageRoot, request.EnableServerCompatibility, log);
+                audioDriverVersion = await InstallPackageAudioAsync(packageRoot, request.EnableServerCompatibility, log);
             }
         }
 
         if (request.AudioInstallSource == AudioInstallSource.BundledLatest)
         {
-            await InstallBundledAudioAsync(request.EnableServerCompatibility, log);
+            audioDriverVersion = await InstallBundledAudioAsync(request.EnableServerCompatibility, log);
         }
 
         if (request.AutoClearDownloadedCache)
@@ -252,6 +259,7 @@ public sealed class DriverWorkflow : IDisposable
             ClearDownloadCache(log);
         }
 
+        return new InstallResult(displayPackageVersion, audioDriverVersion);
     }
 
     public Task ClearDownloadCacheAsync(Action<string> log)
@@ -902,13 +910,13 @@ public sealed class DriverWorkflow : IDisposable
         }
     }
 
-    private async Task InstallBundledAudioAsync(bool serverCompatibility, Action<string> log)
+    private async Task<string?> InstallBundledAudioAsync(bool serverCompatibility, Action<string> log)
     {
         var currentHardware = await GetHardwareInfoAsync();
         if (Version.TryParse(currentHardware.AudioDriverVersion, out var installedVersion) && installedVersion >= new Version(10, 0, 1, 42))
         {
             log("AMD HD Audio driver is already installed; skipping installation.");
-            return;
+            return null;
         }
 
         var sourceInf = Path.Combine(AudioPayloadRoot, "AtihdWT6.inf");
@@ -927,16 +935,17 @@ public sealed class DriverWorkflow : IDisposable
 
         log($"Installing bundled AMD HD Audio driver: {inf}");
         await RunProcessAsync("pnputil.exe", $"/add-driver \"{inf}\" /install", log, allowNoUpdate: true);
+        return GetInfDriverVersion(inf);
     }
 
-    private async Task InstallPackageAudioAsync(string packageRoot, bool serverCompatibility, Action<string> log)
+    private async Task<string?> InstallPackageAudioAsync(string packageRoot, bool serverCompatibility, Action<string> log)
     {
         var sourceInf = Directory.EnumerateFiles(packageRoot, "AtihdWT6.inf", SearchOption.AllDirectories)
             .FirstOrDefault(path => path.Contains($"{Path.DirectorySeparatorChar}Audio{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase));
         if (sourceInf is null)
         {
             log("The selected GPU package does not contain an AMD HD Audio driver.");
-            return;
+            return null;
         }
 
         var inf = sourceInf;
@@ -950,6 +959,14 @@ public sealed class DriverWorkflow : IDisposable
 
         log($"Installing AMD HD Audio driver included with the selected GPU package: {inf}");
         await RunProcessAsync("pnputil.exe", $"/add-driver \"{inf}\" /install", log, allowNoUpdate: true);
+        return GetInfDriverVersion(inf);
+    }
+
+    private static string? GetInfDriverVersion(string infPath)
+    {
+        var line = File.ReadLines(infPath).FirstOrDefault(value => Regex.IsMatch(value, @"^\s*DriverVer\s*=", RegexOptions.IgnoreCase));
+        var version = line is null ? "" : Regex.Match(line, @",\s*(?<version>\d+(?:\.\d+)+)\s*$").Groups["version"].Value;
+        return string.IsNullOrWhiteSpace(version) ? null : version;
     }
 
     private async Task InstallAdrenalinAsync(string packageRoot, bool replaceExisting, Action<string> log)

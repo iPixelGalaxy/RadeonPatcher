@@ -11,6 +11,8 @@ public sealed class UserSettings
     public bool AutoClearDownloadedCache { get; set; } = true;
     public string? CustomSupportUrl { get; set; }
     public string? SelectedDriverVersion { get; set; }
+    public string? LastInstalledDisplayPackageVersion { get; set; }
+    public string? LastInstalledAudioDriverVersion { get; set; }
 }
 
 internal static class UserSettingsStore
