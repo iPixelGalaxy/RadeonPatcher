@@ -21,8 +21,7 @@
                 </Ellipse.Fill>
             </Ellipse>
             <TextBlock Margin="0,12,0,0" FontSize="16" HorizontalAlignment="Center">
-                <Run Text="Made by "/>
-                <Run x:Name="UsernameRun" Text="iPixelGalaxy" Foreground="{DynamicResource LogoBrush}" FontWeight="SemiBold"/>
+                <Run Text="Made by"/><Run Text=" "/><Run x:Name="UsernameRun" Text="iPixelGalaxy" Foreground="{DynamicResource LogoBrush}" FontWeight="SemiBold"/>
             </TextBlock>
         </StackPanel>
 
