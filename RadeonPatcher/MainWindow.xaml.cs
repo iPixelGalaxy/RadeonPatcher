@@ -320,10 +320,17 @@ public partial class MainWindow : Window
 
     private async Task RefreshAfterDriverRemovalAsync(bool expectDisplayRemoved, bool expectAudioRemoved)
     {
-        Log("Waiting for Windows to refresh removed driver information.");
-        await Busy(async () =>
+        Log("Refreshing installed driver versions.");
+        await RefreshAsync();
+        PromptForRestart("Driver removal finished", "Restart Windows to finish removing the AMD drivers.");
+        _ = ObserveRemovedDriverStateAsync(expectDisplayRemoved, expectAudioRemoved);
+    }
+
+    private async Task ObserveRemovedDriverStateAsync(bool expectDisplayRemoved, bool expectAudioRemoved)
+    {
+        try
         {
-            for (var attempt = 0; attempt < 10; attempt++)
+            for (var attempt = 0; attempt < 30; attempt++)
             {
                 await Task.Delay(1000);
                 var hardware = await _workflow.GetHardwareInfoAsync();
@@ -331,14 +338,16 @@ public partial class MainWindow : Window
                 var audioRemoved = !expectAudioRemoved || hardware.AudioDriverVersion is null;
                 if (displayRemoved && audioRemoved)
                 {
-                    break;
+                    Log("Windows finished refreshing removed driver information.");
+                    await RefreshAsync();
+                    return;
                 }
             }
-        });
-
-        Log("Refreshing installed driver versions.");
-        await RefreshAsync();
-        PromptForRestart("Driver removal finished", "Restart Windows to finish removing the AMD drivers.");
+        }
+        catch (Exception ex)
+        {
+            Log("Could not refresh removed driver information: " + ex.Message);
+        }
     }
 
     private void PromptForRestart(string heading, string message)
