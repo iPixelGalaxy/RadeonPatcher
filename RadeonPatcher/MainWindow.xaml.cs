@@ -686,6 +686,7 @@ public partial class MainWindow : Window
         SetThemeBrush("LogBackgroundBrush", dark ? "#24272D" : "#FFFFFF");
         SetThemeBrush("LogForegroundBrush", dark ? "#E5EAF0" : "#1F2933");
         SetThemeBrush("LogoBrush", dark ? "#F05A48" : "#D93626");
+        SetThemeBrush("LogoHoverBrush", dark ? "#C94738" : "#B72D20");
         SetThemeBrush("SelectionBackgroundBrush", dark ? "#46505C" : "#DCE7F3");
         SetThemeBrush("ScrollTrackBrush", dark ? "#24272D" : "#E6EBF1");
         SetThemeBrush("ScrollThumbBrush", dark ? "#586270" : "#A9B5C2");

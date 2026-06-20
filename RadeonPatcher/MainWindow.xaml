@@ -17,6 +17,7 @@
         <SolidColorBrush x:Key="LogBackgroundBrush" Color="#101820"/>
         <SolidColorBrush x:Key="LogForegroundBrush" Color="#E8F0F7"/>
         <SolidColorBrush x:Key="LogoBrush" Color="#D93626"/>
+        <SolidColorBrush x:Key="LogoHoverBrush" Color="#B72D20"/>
         <SolidColorBrush x:Key="SelectionBackgroundBrush" Color="#DCE7F3"/>
         <SolidColorBrush x:Key="ScrollTrackBrush" Color="#1A232D"/>
         <SolidColorBrush x:Key="ScrollThumbBrush" Color="#495565"/>
@@ -559,7 +560,7 @@
 
         <DockPanel Grid.Row="3" Margin="0,14,0,0" LastChildFill="False">
             <ProgressBar x:Name="Progress" DockPanel.Dock="Left" Width="120" Height="20" IsIndeterminate="False" Visibility="Hidden" Style="{StaticResource AppProgressBar}"/>
-            <Button x:Name="InstallButton" DockPanel.Dock="Right" Width="135" Height="38" Content="Install" Click="InstallButton_Click"/>
+            <Button x:Name="InstallButton" DockPanel.Dock="Right" Width="135" Height="38" Content="Install" Style="{StaticResource AccentDialogButtonStyle}" Click="InstallButton_Click"/>
             <Button x:Name="ToggleMpoButton" DockPanel.Dock="Right" Width="135" Height="38" Margin="0,0,10,0" Click="ToggleMpoButton_Click" ToolTip="Enables or removes the MPO registry override. Restart or sign out/in after changing it. MPO Off is Recommended.">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                     <TextBlock x:Name="ToggleMpoButtonText" Text="Turn MPO Off"/>
