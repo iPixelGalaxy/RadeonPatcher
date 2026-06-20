@@ -580,7 +580,6 @@ public sealed class DriverWorkflow : IDisposable
     private async Task InstallUpdateCheckServiceAsync(Action<string> log)
     {
         Directory.CreateDirectory(WorkRoot);
-        var processPath = Environment.ProcessPath ?? throw new InvalidOperationException("Could not determine the current executable path.");
         var serviceExe = Path.Combine(WorkRoot, "RadeonPatcherUpdateCheck.exe");
         await ExtractEmbeddedFolderAsync("UpdateChecker\\", WorkRoot);
 
@@ -589,8 +588,7 @@ public sealed class DriverWorkflow : IDisposable
             $ErrorActionPreference = 'Stop'
             $taskName = 'RadeonPatcher Update Check'
             $exe = '{{serviceExe.Replace("'", "''")}}'
-            $app = '{{processPath.Replace("'", "''")}}'
-            $action = New-ScheduledTaskAction -Execute $exe -Argument ('"' + $app + '"')
+            $action = New-ScheduledTaskAction -Execute $exe -Argument '--scheduled'
             $triggers = @()
             $triggers += New-ScheduledTaskTrigger -AtStartup
             $triggers += New-ScheduledTaskTrigger -Daily -At '{{startTime}}'
@@ -598,11 +596,6 @@ public sealed class DriverWorkflow : IDisposable
             $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive
             Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $triggers -Settings $settings -Principal $principal -Force | Out-Null
             """;
-        if (IsUserWritableLocation(processPath))
-        {
-            throw new InvalidOperationException("Update checks require RadeonPatcher to be installed outside a user-writable folder. Move it to a protected location such as Program Files first.");
-        }
-
         log("Installing non-elevated update check scheduled task.");
         await RunPowerShellAsync(script);
         log("Update check service installed. It will run at Windows boot and once every 24 hours.");
@@ -1400,13 +1393,6 @@ public sealed class DriverWorkflow : IDisposable
         await process.WaitForExitAsync();
         process.WaitForExit();
         return process.ExitCode;
-    }
-
-    private static bool IsUserWritableLocation(string path)
-    {
-        var fullPath = Path.GetFullPath(path);
-        var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        return fullPath.StartsWith(userProfile + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
     }
 
     private const uint InstallFlagForce = 0x00000001;

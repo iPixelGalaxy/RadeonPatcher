@@ -38,7 +38,7 @@
              Properties="Configuration=$(Configuration);RuntimeIdentifier=win-x64" />
     <MSBuild Projects="..\RadeonPatcher.UpdateCheck\RadeonPatcher.UpdateCheck.csproj"
              Targets="Publish"
-             Properties="Configuration=$(Configuration);RuntimeIdentifier=win-x64;SelfContained=true;PublishAot=true;UseAppHost=true;PublishDir=$(MSBuildProjectDirectory)\$(UpdateCheckerPublishDir)" />
+             Properties="Configuration=$(Configuration);RuntimeIdentifier=win-x64;SelfContained=true;PublishAot=false;PublishSingleFile=true;PublishTrimmed=false;UseAppHost=true;PublishDir=$(MSBuildProjectDirectory)\$(UpdateCheckerPublishDir)" />
   </Target>
 
   <ItemGroup>

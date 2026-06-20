@@ -36,7 +36,7 @@ Updates are downloaded only from that repository's GitHub Release asset path. Ra
 
 ## Driver Update Checker
 
-The **Install Update Check Service** button registers a non-elevated scheduled task named `RadeonPatcher Update Check`. RadeonPatcher must be installed outside user-writable folders (such as Downloads or Desktop); use a protected location such as Program Files. A small dedicated checker launches the application's background driver check at Windows startup and once every 24 hours. New driver availability produces a Windows notification; drivers are never installed automatically.
+The **Install Update Check Service** button registers a non-elevated scheduled task named `RadeonPatcher Update Check`. The standalone checker runs its own lightweight hardware and AMD release lookup at Windows startup and once every 24 hours; it does not launch the administrator-privileged main application. New driver availability produces a Windows notification, and drivers are never installed automatically. Running `C:\ProgramData\RadeonPatcher\RadeonPatcherUpdateCheck.exe` directly performs a test check and reports the result in a notification.
 
 ## Verified Releases
 
