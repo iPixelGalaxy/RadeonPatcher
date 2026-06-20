@@ -113,7 +113,7 @@ public sealed class DriverWorkflow : IDisposable
             $signedDrivers = Get-CimInstance Win32_PnPSignedDriver
             $drv = $signedDrivers | Where-Object { $_.DeviceClass -eq 'DISPLAY' -and ($_.DeviceID -match 'VEN_1002' -or $_.DeviceName -match 'AMD|Radeon') } | Select-Object -First 1
             $aud = $signedDrivers | Where-Object { $_.DeviceClass -eq 'MEDIA' -and ($_.DeviceID -match 'HDAUDIO\\FUNC_01&VEN_1002&DEV_AA01' -or $_.DeviceName -match 'AMD High Definition Audio') } | Select-Object -First 1
-            $hasAmdDisplayDriver = $drv -and $gpu.Service -match 'amdwddmg|amdkmdag' -and $drv.DriverProviderName -match 'AMD|Advanced Micro Devices' -and $drv.InfName -notmatch '^display\.inf$'
+            $hasAmdDisplayDriver = $drv -and $drv.DriverProviderName -match 'AMD|Advanced Micro Devices' -and $drv.InfName -notmatch '^display\.inf$'
             $hasAmdAudioDriver = $aud -and $aud.DriverProviderName -match 'AMD|Advanced Micro Devices' -and $aud.InfName -notmatch '^hdaudio\.inf$'
             $os = Get-CimInstance Win32_OperatingSystem
             $windowsVersion = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction SilentlyContinue
