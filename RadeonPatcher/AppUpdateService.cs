@@ -13,6 +13,8 @@ public sealed record AppUpdateInfo(Version CurrentVersion, Version LatestVersion
 public static class AppUpdateService
 {
     private const string LatestReleaseUrl = "https://api.github.com/repos/iPixelGalaxy/RadeonPatcher/releases/latest";
+    private const string UpstreamOwner = "iPixelGalaxy";
+    private const string UpstreamRepository = "RadeonPatcher";
 
     public static Version CurrentVersion => Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0);
 
@@ -28,9 +30,15 @@ public static class AppUpdateService
 
         var executable = release.Assets.FirstOrDefault(asset => asset.Name.Equals("RadeonPatcher.exe", StringComparison.OrdinalIgnoreCase));
         var checksum = release.Assets.FirstOrDefault(asset => asset.Name.Equals("RadeonPatcher.exe.sha256", StringComparison.OrdinalIgnoreCase));
-        return executable is null || checksum is null
-            ? null
-            : new AppUpdateInfo(CurrentVersion, latest, executable.DownloadUrl, checksum.DownloadUrl);
+        if (executable is null || checksum is null ||
+            !IsTrustedReleaseAssetUrl(executable.DownloadUrl) || !IsTrustedReleaseAssetUrl(checksum.DownloadUrl))
+        {
+            return null;
+        }
+
+        // The trust anchor is the upstream GitHub repository. Its checksum detects
+        // accidental transport corruption; it does not independently authenticate a release.
+        return new AppUpdateInfo(CurrentVersion, latest, executable.DownloadUrl, checksum.DownloadUrl);
     }
 
     public static async Task DownloadAndRestartAsync(AppUpdateInfo update)
@@ -75,6 +83,7 @@ public static class AppUpdateService
     private static HttpClient CreateClient()
     {
         var client = new HttpClient();
+        client.Timeout = TimeSpan.FromSeconds(30);
         client.DefaultRequestHeaders.UserAgent.ParseAdd("RadeonPatcher-AppUpdater");
         client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
         return client;
@@ -82,6 +91,17 @@ public static class AppUpdateService
 
     private static bool TryParseVersion(string tag, out Version version) =>
         Version.TryParse(tag.Trim().TrimStart('v', 'V').Split('-')[0], out version!);
+
+    internal static bool IsTrustedReleaseAssetUrl(string value)
+    {
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
+        {
+            return false;
+        }
+
+        return string.Equals(uri.Host, "github.com", StringComparison.OrdinalIgnoreCase) &&
+            uri.AbsolutePath.StartsWith($"/{UpstreamOwner}/{UpstreamRepository}/releases/download/", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static string Escape(string value) => value.Replace("'", "''");
 

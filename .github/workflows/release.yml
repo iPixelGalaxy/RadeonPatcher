@@ -22,8 +22,10 @@ jobs:
     steps:
       - name: Validate version
         shell: pwsh
+        env:
+          VERSION: ${{ inputs.version }}
         run: |
-          if ('${{ inputs.version }}' -notmatch '^\d+\.\d+\.\d+$') {
+          if ($env:VERSION -notmatch '^\d+\.\d+\.\d+$') {
             throw 'Version must use major.minor.patch format, such as 1.2.0.'
           }
 
@@ -40,15 +42,17 @@ jobs:
 
       - name: Publish
         shell: pwsh
+        env:
+          VERSION: ${{ inputs.version }}
         run: |
           dotnet publish .\RadeonPatcher\RadeonPatcher.csproj `
             -c Release `
             -r win-x64 `
             --self-contained true `
-            -p:Version=${{ inputs.version }} `
-            -p:AssemblyVersion=${{ inputs.version }} `
-            -p:FileVersion=${{ inputs.version }} `
-            -p:InformationalVersion=${{ inputs.version }}
+            -p:Version=$env:VERSION `
+            -p:AssemblyVersion=$env:VERSION `
+            -p:FileVersion=$env:VERSION `
+            -p:InformationalVersion=$env:VERSION
 
       - name: Generate checksum
         shell: pwsh
@@ -68,12 +72,13 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
         run: |
           $sha = git rev-parse HEAD
-          gh release create "v${{ inputs.version }}" `
+          gh release create "v$env:VERSION" `
             .\RadeonPatcher.exe `
             .\RadeonPatcher.exe.sha256 `
             --repo "${{ github.repository }}" `
             --target $sha `
-            --title "RadeonPatcher ${{ inputs.version }}" `
+            --title "RadeonPatcher $env:VERSION" `
             --generate-notes
