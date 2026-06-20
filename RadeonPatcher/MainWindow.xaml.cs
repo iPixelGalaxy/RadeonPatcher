@@ -25,10 +25,14 @@ public partial class MainWindow : Window
     private bool _canUninstallAudioDriver;
     private bool _canUninstallAdrenalin;
     private int _busyOperationCount;
+    private readonly string _appVersionTag;
 
     public MainWindow()
     {
         InitializeComponent();
+        var version = AppUpdateService.CurrentVersion;
+        _appVersionTag = $"v{version.Major}.{version.Minor}.{version.Build}";
+        AppVersionText.Text = _appVersionTag;
         _settings = UserSettingsStore.Load();
         _settings.LastApplicationPath = Environment.ProcessPath;
         UserSettingsStore.Save(_settings);
@@ -38,6 +42,14 @@ public partial class MainWindow : Window
         SystemEvents.UserPreferenceChanged += SystemEvents_UserPreferenceChanged;
         DriverCombo.SelectionChanged += (_, _) => UpdateSelectedDriverText();
         Loaded += async (_, _) => await RefreshAsync();
+    }
+
+    private void AppVersionText_MouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        Process.Start(new ProcessStartInfo($"https://github.com/iPixelGalaxy/RadeonPatcher/releases/tag/{_appVersionTag}")
+        {
+            UseShellExecute = true
+        });
     }
 
     private async Task RefreshAsync(bool refreshDrivers = false)

@@ -445,7 +445,16 @@
                     </Viewbox>
                 </Border>
                 <StackPanel>
-                    <TextBlock FontSize="26" FontWeight="SemiBold" Text="RadeonPatcher"/>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock FontSize="26" FontWeight="SemiBold" Text="RadeonPatcher"/>
+                        <TextBlock x:Name="AppVersionText"
+                                   Margin="8,0,0,3"
+                                   Foreground="{DynamicResource SecondaryTextBrush}"
+                                   VerticalAlignment="Bottom"
+                                   Cursor="Hand"
+                                   ToolTip="Open this release on GitHub"
+                                   MouseLeftButtonUp="AppVersionText_MouseLeftButtonUp"/>
+                    </StackPanel>
                     <TextBlock Foreground="{DynamicResource SecondaryTextBrush}" Text="Independent Radeon driver installer and compatibility patcher. Not affiliated with AMD."/>
                 </StackPanel>
             </StackPanel>
