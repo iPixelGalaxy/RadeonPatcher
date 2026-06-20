@@ -91,8 +91,11 @@ public partial class MainWindow : Window
                 : $"Using detected AMD support page for {_hardware.GpuName}.";
             ServerCompatCheck.IsChecked = _hardware.IsServer;
             ServerCompatCheck.IsEnabled = false;
-            var audioInstalled = _hardware.AudioDriverVersion is not null;
-            var audioNeedsUpdate = !Version.TryParse(_hardware.AudioDriverVersion, out var installedAudioVersion) ||
+            var effectiveAudioVersion = audioForced
+                ? _settings.LastInstalledAudioDriverVersion
+                : _hardware.AudioDriverVersion;
+            var audioInstalled = effectiveAudioVersion is not null;
+            var audioNeedsUpdate = !Version.TryParse(effectiveAudioVersion, out var installedAudioVersion) ||
                 installedAudioVersion < LatestBundledAudioVersion;
             _updatingOptions = true;
             AudioCheck.IsChecked = audioNeedsUpdate && _settings.InstallAudioDriver;
@@ -102,7 +105,7 @@ public partial class MainWindow : Window
                 ? $"AMD HD Audio Driver {LatestBundledAudioVersion} or later is already installed."
                 : audioInstalled
                     ? $"AMD HD Audio Driver {LatestBundledAudioVersion} is available."
-                : "AMD does not provide the latest driver with their GPU Drivers, this driver is sourced from Snappy Driver Installer.";
+                    : $"No AMD HD Audio driver is installed. Bundled version {LatestBundledAudioVersion} is available from Snappy Driver Installer.";
             UpdateCheckServiceButtonText.Text = _hardware.IsUpdateCheckServiceInstalled
                 ? "Uninstall Update Check Service"
                 : "Install Update Check Service";
