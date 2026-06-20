@@ -58,16 +58,16 @@ public partial class MainWindow : Window
             GpuText.Text = _hardware.GpuName ?? "No AMD display adapter detected.";
             var displayForced = IsForcedVersionCurrent(_settings.LastInstalledDisplayPackageAt);
             var audioForced = IsForcedVersionCurrent(_settings.LastInstalledAudioDriverAt);
-            DisplayDriverText.Text = displayForced && !string.IsNullOrWhiteSpace(_settings.LastInstalledDisplayPackageVersion)
-                ? $"Installed Video Driver: {_settings.LastInstalledDisplayPackageVersion}"
+            DisplayDriverText.Text = displayForced
+                ? $"Installed Video Driver: {_settings.LastInstalledDisplayPackageVersion ?? "None"}"
                 : _hardware.DisplayDriverPackageVersion is null
                 ? _hardware.DisplayDriverVersion is null
                     ? "Installed Video Driver: None"
                     : "Installed Video Driver: Unknown"
                 : $"Installed Video Driver: {_hardware.DisplayDriverPackageVersion}";
             OsText.Text = $"{_hardware.OsName} ({_hardware.OsVersion})";
-            AudioText.Text = audioForced && !string.IsNullOrWhiteSpace(_settings.LastInstalledAudioDriverVersion)
-                ? $"Installed AMD HD Audio Driver: {_settings.LastInstalledAudioDriverVersion}"
+            AudioText.Text = audioForced
+                ? $"Installed AMD HD Audio Driver: {_settings.LastInstalledAudioDriverVersion ?? "None"}"
                 : _hardware.AudioDriverVersion is null
                 ? "Installed AMD HD Audio Driver: None"
                 : $"Installed AMD HD Audio Driver: {_hardware.AudioDriverVersion}";
@@ -220,6 +220,23 @@ public partial class MainWindow : Window
         _ = RefreshAfterForcedVersionExpiresAsync(installedAt);
     }
 
+    private void RememberRemovedVersions(bool displayRemoved, bool audioRemoved)
+    {
+        var removedAt = DateTimeOffset.UtcNow;
+        if (displayRemoved)
+        {
+            _settings.LastInstalledDisplayPackageVersion = null;
+            _settings.LastInstalledDisplayPackageAt = removedAt;
+        }
+        if (audioRemoved)
+        {
+            _settings.LastInstalledAudioDriverVersion = null;
+            _settings.LastInstalledAudioDriverAt = removedAt;
+        }
+        SaveSettings();
+        _ = RefreshAfterForcedVersionExpiresAsync(removedAt);
+    }
+
     private async Task RefreshAfterInstallAsync(InstallRequest request, InstallResult result)
     {
         var expectDisplay = result.DisplayPackageVersion is not null;
@@ -312,6 +329,7 @@ public partial class MainWindow : Window
         });
         if (removed)
         {
+            RememberRemovedVersions(displayRemoved: true, audioRemoved: false);
             await RefreshAfterDriverRemovalAsync(expectDisplayRemoved: true, expectAudioRemoved: false);
         }
     }
@@ -331,6 +349,7 @@ public partial class MainWindow : Window
         });
         if (removed)
         {
+            RememberRemovedVersions(displayRemoved: false, audioRemoved: true);
             await RefreshAfterDriverRemovalAsync(expectDisplayRemoved: false, expectAudioRemoved: true);
         }
     }
@@ -365,6 +384,7 @@ public partial class MainWindow : Window
         });
         if (removed && (removeDisplay || removeAudio))
         {
+            RememberRemovedVersions(removeDisplay, removeAudio);
             await RefreshAfterDriverRemovalAsync(removeDisplay, removeAudio);
         }
         else if (removed)
