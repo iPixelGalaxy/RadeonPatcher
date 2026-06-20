@@ -30,11 +30,11 @@ public partial class AppDialogWindow : Window
         DialogResult = false;
     }
 
-    protected override void OnKeyDown(KeyEventArgs e)
+    protected override void OnKeyDown(System.Windows.Input.KeyEventArgs e)
     {
         if (e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control)
         {
-            Clipboard.SetText($"{HeadingText.Text}{Environment.NewLine}{Environment.NewLine}{MessageText.Text}");
+            System.Windows.Clipboard.SetText($"{HeadingText.Text}{Environment.NewLine}{Environment.NewLine}{MessageText.Text}");
             e.Handled = true;
             return;
         }
