@@ -89,7 +89,7 @@
             </Border>
             <StackPanel x:Name="ReleaseNotesPanel" Margin="0,16,0,0" Visibility="Collapsed">
                 <TextBlock FontWeight="SemiBold" Text="What's changed" Margin="0,0,0,8"/>
-                <Border Background="{DynamicResource PanelBackgroundBrush}" CornerRadius="8" Padding="12,8,3,8">
+                <Border Background="{DynamicResource PanelBackgroundBrush}" CornerRadius="8" Padding="12,8,7.5,8">
                     <ScrollViewer MaxHeight="220" VerticalScrollBarVisibility="Auto">
                         <ScrollViewer.Resources>
                             <Style TargetType="ScrollBar" BasedOn="{StaticResource UpdateScrollBarStyle}"/>
@@ -101,7 +101,7 @@
         </StackPanel>
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
             <Button Width="105" Height="34" Margin="0,0,10,0" Content="Maybe Later" IsCancel="True"/>
-            <Button Width="105" Height="34" Content="Update" IsDefault="True" Click="UpdateButton_Click"/>
+            <Button Width="105" Height="34" Content="Update" IsDefault="True" Style="{StaticResource AccentDialogButtonStyle}" Click="UpdateButton_Click"/>
         </StackPanel>
     </Grid>
 </Window>
