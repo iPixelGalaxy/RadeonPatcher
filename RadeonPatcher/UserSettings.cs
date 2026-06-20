@@ -15,6 +15,7 @@ public sealed class UserSettings
     public string? LastInstalledAudioDriverVersion { get; set; }
     public DateTimeOffset? LastInstalledDisplayPackageAt { get; set; }
     public DateTimeOffset? LastInstalledAudioDriverAt { get; set; }
+    public string? LastApplicationPath { get; set; }
 }
 
 internal static class UserSettingsStore

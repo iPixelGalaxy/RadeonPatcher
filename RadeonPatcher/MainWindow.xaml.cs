@@ -30,6 +30,8 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         _settings = UserSettingsStore.Load();
+        _settings.LastApplicationPath = Environment.ProcessPath;
+        UserSettingsStore.Save(_settings);
         ApplySavedSettings();
         ApplyTheme();
         SourceInitialized += (_, _) => ApplyTitleBarTheme();

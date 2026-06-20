@@ -98,18 +98,48 @@ internal static class Program
 
     private static async Task ShowNotificationAsync(string title, string message)
     {
+        var applicationPath = ResolveLastApplicationPath();
         using var icon = new Forms.NotifyIcon
         {
             Icon = System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath ?? Forms.Application.ExecutablePath),
             Visible = true,
             Text = "RadeonPatcher"
         };
+        icon.BalloonTipClicked += (_, _) =>
+        {
+            if (applicationPath is null) return;
+            try
+            {
+                Process.Start(new ProcessStartInfo(applicationPath) { UseShellExecute = true });
+            }
+            catch
+            {
+                // A stale or inaccessible application path should not crash the checker.
+            }
+        };
         icon.ShowBalloonTip(10000, title, message, Forms.ToolTipIcon.Info);
         await Task.Delay(11000);
+    }
+
+    private static string? ResolveLastApplicationPath()
+    {
+        try
+        {
+            var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RadeonPatcher", "settings.json");
+            var configured = File.Exists(path)
+                ? JsonSerializer.Deserialize<CheckerSettings>(File.ReadAllText(path))?.LastApplicationPath
+                : null;
+            return !string.IsNullOrWhiteSpace(configured) && File.Exists(configured) ? configured : null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static string Decode(string value) => Encoding.UTF8.GetString(Convert.FromBase64String(value.Trim()));
     private sealed record Hardware(string GpuName, string InstanceId);
     private sealed record DriverReceipt(string GpuInstanceId, string OriginalInf, string PackageVersion, DateTimeOffset InstalledAt);
+    private sealed record CheckerSettings(string? LastApplicationPath);
     private sealed record CheckResult(bool UpdateAvailable, string? CurrentVersion, string LatestVersion, string Message);
 }
