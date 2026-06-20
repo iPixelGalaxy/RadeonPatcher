@@ -198,7 +198,7 @@ public partial class MainWindow : Window
             Log("Waiting for Windows to refresh installed driver information.");
             await Busy(async () =>
             {
-                for (var attempt = 0; attempt < 10; attempt++)
+                for (var attempt = 0; attempt < 30; attempt++)
                 {
                     await Task.Delay(1000);
                     var hardware = await _workflow.GetHardwareInfoAsync();

@@ -332,6 +332,7 @@ public sealed class DriverWorkflow : IDisposable
 
         await UninstallAmdDriverPackagesAsync("Display", "display", log);
         await UninstallAmdDriverPackagesAsync("MEDIA", "HD Audio", log);
+        await ScanForDeviceChangesAsync(log);
     }
 
     public async Task RemoveLocalSigningCertificateAsync(Action<string> log)
@@ -365,6 +366,7 @@ public sealed class DriverWorkflow : IDisposable
 
         log($"Removing active AMD HD Audio driver package: {activeInf}");
         await RunProcessAsync("pnputil.exe", $"/delete-driver {activeInf} /uninstall /force", log, allowAlreadyRemoved: true);
+        await ScanForDeviceChangesAsync(log);
     }
 
     private static async Task UninstallDisplayDriverCoreAsync(HardwareInfo hardware, Action<string> log)
@@ -378,6 +380,7 @@ public sealed class DriverWorkflow : IDisposable
 
         log($"Removing active display driver package: {activeInf}");
         await RunProcessAsync("pnputil.exe", $"/delete-driver {activeInf} /uninstall /force", log, allowAlreadyRemoved: true);
+        await ScanForDeviceChangesAsync(log);
     }
 
     private async Task UninstallAmdDriverPackagesAsync(string deviceClass, string componentName, Action<string> log)
@@ -409,6 +412,12 @@ public sealed class DriverWorkflow : IDisposable
             log($"Removing AMD {componentName} driver package: {package}");
             await RunProcessAsync("pnputil.exe", $"/delete-driver {package} /uninstall /force", log, allowAlreadyRemoved: true);
         }
+    }
+
+    private static async Task ScanForDeviceChangesAsync(Action<string> log)
+    {
+        log("Requesting Windows device rescan.");
+        await RunProcessAsync("pnputil.exe", "/scan-devices", log, throwOnError: false);
     }
 
     private async Task RemoveAdrenalinCoreAsync(Action<string> log)
