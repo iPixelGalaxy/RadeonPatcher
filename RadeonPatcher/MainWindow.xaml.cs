@@ -12,6 +12,7 @@ namespace RadeonPatcher;
 [SupportedOSPlatform("windows")]
 public partial class MainWindow : Window
 {
+    private static readonly Version LatestBundledAudioVersion = new(10, 0, 1, 42);
     private readonly DriverWorkflow _workflow = new();
     private readonly UserSettings _settings;
     private HardwareInfo? _hardware;
@@ -80,12 +81,16 @@ public partial class MainWindow : Window
             ServerCompatCheck.IsChecked = _hardware.IsServer;
             ServerCompatCheck.IsEnabled = false;
             var audioInstalled = _hardware.AudioDriverVersion is not null;
+            var audioNeedsUpdate = !Version.TryParse(_hardware.AudioDriverVersion, out var installedAudioVersion) ||
+                installedAudioVersion < LatestBundledAudioVersion;
             _updatingOptions = true;
-            AudioCheck.IsChecked = audioInstalled ? false : _settings.InstallAudioDriver;
-            AudioCheck.IsEnabled = !audioInstalled;
+            AudioCheck.IsChecked = audioNeedsUpdate && _settings.InstallAudioDriver;
+            AudioCheck.IsEnabled = audioNeedsUpdate;
             _updatingOptions = false;
-            AudioInstalledHint.ToolTip = audioInstalled
-                ? "AMD HD Audio Driver is already installed."
+            AudioInstalledHint.ToolTip = !audioNeedsUpdate
+                ? $"AMD HD Audio Driver {LatestBundledAudioVersion} or later is already installed."
+                : audioInstalled
+                    ? $"AMD HD Audio Driver {LatestBundledAudioVersion} is available."
                 : "AMD does not provide the latest driver with their GPU Drivers, this driver is sourced from Snappy Driver Installer.";
             UpdateCheckServiceButtonText.Text = _hardware.IsUpdateCheckServiceInstalled
                 ? "Uninstall Update Check Service"
@@ -171,11 +176,11 @@ public partial class MainWindow : Window
                 hardware.IsServer,
                 AdrenalinCheck.IsChecked == true,
                 hardware.IsAdrenalinInstalled && IsSelectedDriverDifferentFromCurrent(),
-                hardware.AudioDriverVersion is not null
-                    ? AudioInstallSource.None
-                    : AudioCheck.IsChecked == true
-                        ? AudioInstallSource.BundledLatest
-                        : AudioInstallSource.DriverPackage,
+                AudioCheck.IsChecked == true
+                    ? AudioInstallSource.BundledLatest
+                    : hardware.AudioDriverVersion is null
+                        ? AudioInstallSource.DriverPackage
+                        : AudioInstallSource.None,
                 AutoClearDownloadCacheCheck.IsChecked == true);
 
             completedResult = await _workflow.InstallAsync(request, Log);
