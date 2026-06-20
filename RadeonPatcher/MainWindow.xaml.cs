@@ -239,6 +239,7 @@ public partial class MainWindow : Window
         {
             _settings.LastInstalledAudioDriverVersion = null;
             _settings.LastInstalledAudioDriverAt = removedAt;
+            _settings.InstallAudioDriver = true;
         }
         SaveSettings();
         _ = RefreshAfterForcedVersionExpiresAsync(removedAt);
