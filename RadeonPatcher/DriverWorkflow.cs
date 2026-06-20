@@ -241,7 +241,7 @@ public sealed class DriverWorkflow : IDisposable
             }
             if (request.InstallAdrenalin)
             {
-                await InstallAdrenalinAsync(packageRoot, request.ReplaceAdrenalin, log);
+                await InstallAdrenalinAsync(packageRoot, request.Driver.VersionText, request.ReplaceAdrenalin, log);
             }
             if (request.AudioInstallSource == AudioInstallSource.DriverPackage)
             {
@@ -931,7 +931,7 @@ public sealed class DriverWorkflow : IDisposable
         return string.IsNullOrWhiteSpace(version) ? null : version;
     }
 
-    private async Task InstallAdrenalinAsync(string packageRoot, bool replaceExisting, Action<string> log)
+    private async Task InstallAdrenalinAsync(string packageRoot, string driverVersion, bool replaceExisting, Action<string> log)
     {
         if (replaceExisting && FindAdrenalinUninstallCommand() is not null)
         {
@@ -948,11 +948,25 @@ public sealed class DriverWorkflow : IDisposable
             return;
         }
 
-        var temp = Path.Combine(ExtractedRoot, "ccc2-" + DateTime.Now.ToString("yyyyMMdd-HHmmss"));
-        Directory.CreateDirectory(temp);
-        log($"Extracting Adrenalin component installer: {installer}");
-        var exit = await RunProcessAsync(Path.Combine(ToolsRoot, "7z.exe"), $"x \"{installer}\" -o\"{temp}\" -y", log, throwOnError: false);
-        var msi = Directory.EnumerateFiles(temp, "ccc-next64.msi", SearchOption.AllDirectories).FirstOrDefault();
+        var safeVersion = string.Concat(driverVersion.Select(character =>
+            Path.GetInvalidFileNameChars().Contains(character) ? '_' : character));
+        var temp = Path.Combine(ExtractedRoot, "ccc2-" + safeVersion);
+        var msi = Directory.Exists(temp)
+            ? Directory.EnumerateFiles(temp, "ccc-next64.msi", SearchOption.AllDirectories).FirstOrDefault()
+            : null;
+        var exit = 0;
+        if (msi is null)
+        {
+            if (Directory.Exists(temp)) Directory.Delete(temp, true);
+            Directory.CreateDirectory(temp);
+            log($"Extracting Adrenalin component installer for driver {driverVersion}: {installer}");
+            exit = await RunProcessAsync(Path.Combine(ToolsRoot, "7z.exe"), $"x \"{installer}\" -o\"{temp}\" -y", log, throwOnError: false);
+            msi = Directory.EnumerateFiles(temp, "ccc-next64.msi", SearchOption.AllDirectories).FirstOrDefault();
+        }
+        else
+        {
+            log($"Reusing extracted Adrenalin component installer for driver {driverVersion}: {temp}");
+        }
         if (exit == 0 && msi is not null)
         {
             log($"Installing Adrenalin MSI: {msi}");
