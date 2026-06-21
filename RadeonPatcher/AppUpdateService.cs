@@ -90,7 +90,8 @@ public static class AppUpdateService
             throw new InvalidOperationException("The downloaded update did not match the checksum published by GitHub Actions.");
         }
 
-        progress?.Report(new UpdateDownloadProgress("Installing update...", null));
+        progress?.Report(new UpdateDownloadProgress("Restarting...", 1));
+        await Task.Delay(100);
         var script = $$"""
             $ErrorActionPreference = 'Stop'
             Wait-Process -Id {{Environment.ProcessId}} -ErrorAction SilentlyContinue
