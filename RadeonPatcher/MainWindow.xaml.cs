@@ -630,7 +630,7 @@ public partial class MainWindow : Window
         RefreshButton.IsEnabled = !busy;
         ClearDownloadCacheButton.IsEnabled = !busy && _hasDownloadCache;
         ThemeCombo.IsEnabled = !busy;
-        AboutButton.IsEnabled = !busy;
+        AboutButton.IsEnabled = true;
         InstallButton.IsEnabled = !busy;
         ToggleMpoButton.IsEnabled = !busy;
         UpdateCheckServiceButton.IsEnabled = !busy;
