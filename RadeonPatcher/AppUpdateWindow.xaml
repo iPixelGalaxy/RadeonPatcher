@@ -58,6 +58,38 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        <Style x:Key="UpdateProgressBarStyle" TargetType="ProgressBar">
+            <Setter Property="Foreground" Value="{DynamicResource LogoBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource ButtonBackgroundBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource InputBorderBrush}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ProgressBar">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="4" Padding="2">
+                            <Grid ClipToBounds="True">
+                                <Border x:Name="PART_Indicator" HorizontalAlignment="Left" Background="{TemplateBinding Foreground}" CornerRadius="2">
+                                    <Border.RenderTransform>
+                                        <TranslateTransform x:Name="IndicatorTransform"/>
+                                    </Border.RenderTransform>
+                                </Border>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsIndeterminate" Value="True">
+                                <Setter TargetName="PART_Indicator" Property="Width" Value="42"/>
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard RepeatBehavior="Forever">
+                                            <DoubleAnimation Storyboard.TargetName="IndicatorTransform" Storyboard.TargetProperty="X" From="-44" To="470" Duration="0:0:1.4"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
     <Grid Margin="24,22">
         <Grid.RowDefinitions>
@@ -98,10 +130,14 @@
                     </ScrollViewer>
                 </Border>
             </StackPanel>
+            <StackPanel x:Name="DownloadPanel" Margin="0,16,0,0" Visibility="Collapsed">
+                <TextBlock x:Name="DownloadStatusText" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,0,0,8"/>
+                <ProgressBar x:Name="DownloadProgress" Height="18" Minimum="0" Maximum="100" Style="{StaticResource UpdateProgressBarStyle}"/>
+            </StackPanel>
         </StackPanel>
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Width="105" Height="34" Margin="0,0,10,0" Content="Maybe Later" IsCancel="True"/>
-            <Button Width="105" Height="34" Content="Update" IsDefault="True" Style="{StaticResource AccentDialogButtonStyle}" Click="UpdateButton_Click"/>
+            <Button x:Name="MaybeLaterButton" Width="105" Height="34" Margin="0,0,10,0" Content="Maybe Later" IsCancel="True"/>
+            <Button x:Name="UpdateButton" Width="105" Height="34" Content="Update" IsDefault="True" Style="{StaticResource AccentDialogButtonStyle}" Click="UpdateButton_Click"/>
         </StackPanel>
     </Grid>
 </Window>

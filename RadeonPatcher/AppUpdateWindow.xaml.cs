@@ -1,14 +1,18 @@
+using System.ComponentModel;
 using System.Windows;
 
 namespace RadeonPatcher;
 
 public partial class AppUpdateWindow : Window
 {
-    public bool UpdateRequested { get; private set; }
+    private readonly AppUpdateInfo _update;
+    private bool _downloading;
+    public bool UpdateInstalled { get; private set; }
 
     public AppUpdateWindow(AppUpdateInfo update)
     {
         InitializeComponent();
+        _update = update;
         CurrentVersionText.Text = Format(update.CurrentVersion);
         LatestVersionText.Text = Format(update.LatestVersion);
         if (update.ReleaseNotes.Count > 0)
@@ -19,10 +23,39 @@ public partial class AppUpdateWindow : Window
         SourceInitialized += (_, _) => DialogTheme.ApplyTitleBar(this);
     }
 
-    private void UpdateButton_Click(object sender, RoutedEventArgs e)
+    private async void UpdateButton_Click(object sender, RoutedEventArgs e)
     {
-        UpdateRequested = true;
-        DialogResult = true;
+        _downloading = true;
+        UpdateButton.IsEnabled = false;
+        MaybeLaterButton.IsEnabled = false;
+        DownloadPanel.Visibility = Visibility.Visible;
+        var progress = new Progress<UpdateDownloadProgress>(value =>
+        {
+            DownloadStatusText.Text = value.Status;
+            DownloadProgress.IsIndeterminate = value.Percentage is null;
+            if (value.Percentage is not null) DownloadProgress.Value = value.Percentage.Value * 100;
+        });
+
+        try
+        {
+            await AppUpdateService.DownloadAndRestartAsync(_update, progress);
+            UpdateInstalled = true;
+            DialogResult = true;
+        }
+        catch (Exception ex)
+        {
+            AppDialog.ShowError(this, "Update failed", $"RadeonPatcher could not install the update.\n\n{ex.Message}");
+            _downloading = false;
+            UpdateButton.IsEnabled = true;
+            MaybeLaterButton.IsEnabled = true;
+            DownloadPanel.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    protected override void OnClosing(CancelEventArgs e)
+    {
+        if (_downloading && !UpdateInstalled) e.Cancel = true;
+        base.OnClosing(e);
     }
 
     private static string Format(Version version) => $"{version.Major}.{version.Minor}.{version.Build}";

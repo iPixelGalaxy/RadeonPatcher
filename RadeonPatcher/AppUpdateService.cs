@@ -16,6 +16,8 @@ public sealed record AppUpdateInfo(
     string ChecksumUrl,
     IReadOnlyList<string> ReleaseNotes);
 
+public sealed record UpdateDownloadProgress(string Status, double? Percentage);
+
 public static class AppUpdateService
 {
     private const string LatestReleaseUrl = "https://api.github.com/repos/iPixelGalaxy/RadeonPatcher/releases/latest";
@@ -49,7 +51,7 @@ public static class AppUpdateService
         return new AppUpdateInfo(CurrentVersion, latest, executable.DownloadUrl, checksum.DownloadUrl, releaseNotes);
     }
 
-    public static async Task DownloadAndRestartAsync(AppUpdateInfo update)
+    public static async Task DownloadAndRestartAsync(AppUpdateInfo update, IProgress<UpdateDownloadProgress>? progress = null)
     {
         var currentExe = Environment.ProcessPath ?? throw new InvalidOperationException("Could not locate the running executable.");
         var updateRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RadeonPatcher", "updates");
@@ -57,12 +59,27 @@ public static class AppUpdateService
         var downloadedExe = Path.Combine(updateRoot, $"RadeonPatcher-{update.LatestVersion}.exe");
 
         using var client = CreateClient();
-        await using (var source = await client.GetStreamAsync(update.DownloadUrl))
+        progress?.Report(new UpdateDownloadProgress("Downloading update...", 0));
+        using var response = await client.GetAsync(update.DownloadUrl, HttpCompletionOption.ResponseHeadersRead);
+        response.EnsureSuccessStatusCode();
+        var contentLength = response.Content.Headers.ContentLength;
+        await using (var source = await response.Content.ReadAsStreamAsync())
         await using (var destination = File.Create(downloadedExe))
         {
-            await source.CopyToAsync(destination);
+            var buffer = new byte[81920];
+            long downloaded = 0;
+            int read;
+            while ((read = await source.ReadAsync(buffer)) > 0)
+            {
+                await destination.WriteAsync(buffer.AsMemory(0, read));
+                downloaded += read;
+                progress?.Report(new UpdateDownloadProgress(
+                    contentLength is > 0 ? $"Downloading update... {downloaded * 100 / contentLength}%" : "Downloading update...",
+                    contentLength is > 0 ? (double)downloaded / contentLength : null));
+            }
         }
 
+        progress?.Report(new UpdateDownloadProgress("Verifying download...", null));
         var checksumText = await client.GetStringAsync(update.ChecksumUrl);
         var expectedHash = checksumText.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
         await using var downloadedStream = File.OpenRead(downloadedExe);
@@ -73,6 +90,7 @@ public static class AppUpdateService
             throw new InvalidOperationException("The downloaded update did not match the checksum published by GitHub Actions.");
         }
 
+        progress?.Report(new UpdateDownloadProgress("Installing update...", null));
         var script = $$"""
             $ErrorActionPreference = 'Stop'
             Wait-Process -Id {{Environment.ProcessId}} -ErrorAction SilentlyContinue

@@ -17,17 +17,18 @@ public partial class App : System.Windows.Application
             return;
         }
 
+        var updateCheck = AppUpdateService.CheckAsync();
         MainWindow = new MainWindow();
         MainWindow.Show();
-        await CheckForAppUpdateAsync(MainWindow);
+        await CheckForAppUpdateAsync(MainWindow, updateCheck);
     }
 
-    private static async Task CheckForAppUpdateAsync(Window owner)
+    private static async Task CheckForAppUpdateAsync(Window owner, Task<AppUpdateInfo?> updateCheck)
     {
         AppUpdateInfo? update;
         try
         {
-            update = await AppUpdateService.CheckAsync();
+            update = await updateCheck;
         }
         catch
         {
@@ -41,19 +42,9 @@ public partial class App : System.Windows.Application
 
         var prompt = new AppUpdateWindow(update) { Owner = owner };
         prompt.ShowDialog();
-        if (!prompt.UpdateRequested)
+        if (prompt.UpdateInstalled)
         {
-            return;
-        }
-
-        try
-        {
-            await AppUpdateService.DownloadAndRestartAsync(update);
             Current.Shutdown();
-        }
-        catch (Exception ex)
-        {
-            AppDialog.ShowError(owner, "Update failed", $"RadeonPatcher could not install the update.\n\n{ex.Message}");
         }
     }
 
