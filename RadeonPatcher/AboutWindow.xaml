@@ -33,7 +33,7 @@
             </StackPanel>
         </Border>
 
-        <Button Grid.Row="3" Width="112" Height="34" Margin="0,20,0,0" HorizontalAlignment="Left" Click="GitHubButton_Click" Style="{StaticResource AccentDialogButtonStyle}">
+        <Button Grid.Row="3" Width="112" Height="34" Margin="0,20,0,0" HorizontalAlignment="Left" Click="GitHubButton_Click">
             <StackPanel Orientation="Horizontal">
                 <Viewbox Width="17" Height="17" Margin="0,0,7,0">
                     <Path Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
