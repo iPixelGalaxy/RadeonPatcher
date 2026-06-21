@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Text.Json;
@@ -16,6 +17,9 @@ public partial class AboutWindow : Window
         SourceInitialized += (_, _) => DialogTheme.ApplyTitleBar(this);
         Loaded += async (_, _) => await LoadGitHubProfileAsync();
     }
+
+    private void GitHubButton_Click(object sender, RoutedEventArgs e) =>
+        Process.Start(new ProcessStartInfo("https://github.com/iPixelGalaxy/RadeonPatcher") { UseShellExecute = true });
 
     private async Task LoadGitHubProfileAsync()
     {
