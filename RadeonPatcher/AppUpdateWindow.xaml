@@ -131,7 +131,10 @@
                 </Border>
             </StackPanel>
             <StackPanel x:Name="DownloadPanel" Margin="0,16,0,0" Visibility="Collapsed">
-                <TextBlock x:Name="DownloadStatusText" Foreground="{DynamicResource SecondaryTextBrush}" Margin="0,0,0,8"/>
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock x:Name="DownloadSpeedText" DockPanel.Dock="Right" Foreground="{DynamicResource SecondaryTextBrush}"/>
+                    <TextBlock x:Name="DownloadStatusText" Foreground="{DynamicResource SecondaryTextBrush}"/>
+                </DockPanel>
                 <ProgressBar x:Name="DownloadProgress" Height="18" Minimum="0" Maximum="100" Style="{StaticResource UpdateProgressBarStyle}"/>
             </StackPanel>
         </StackPanel>

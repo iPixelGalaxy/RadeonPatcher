@@ -16,7 +16,7 @@ public sealed record AppUpdateInfo(
     string ChecksumUrl,
     IReadOnlyList<string> ReleaseNotes);
 
-public sealed record UpdateDownloadProgress(string Status, double? Percentage);
+public sealed record UpdateDownloadProgress(string Status, double? Percentage, double? BytesPerSecond = null);
 
 public static class AppUpdateService
 {
@@ -68,6 +68,7 @@ public static class AppUpdateService
         {
             var buffer = new byte[81920];
             long downloaded = 0;
+            var timer = Stopwatch.StartNew();
             int read;
             while ((read = await source.ReadAsync(buffer)) > 0)
             {
@@ -75,7 +76,8 @@ public static class AppUpdateService
                 downloaded += read;
                 progress?.Report(new UpdateDownloadProgress(
                     contentLength is > 0 ? $"Downloading update... {downloaded * 100 / contentLength}%" : "Downloading update...",
-                    contentLength is > 0 ? (double)downloaded / contentLength : null));
+                    contentLength is > 0 ? (double)downloaded / contentLength : null,
+                    timer.Elapsed.TotalSeconds > 0 ? downloaded / timer.Elapsed.TotalSeconds : null));
             }
         }
 

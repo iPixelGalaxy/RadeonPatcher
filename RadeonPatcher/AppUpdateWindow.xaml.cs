@@ -32,6 +32,9 @@ public partial class AppUpdateWindow : Window
         var progress = new Progress<UpdateDownloadProgress>(value =>
         {
             DownloadStatusText.Text = value.Status;
+            DownloadSpeedText.Text = value.BytesPerSecond is null
+                ? ""
+                : $"{value.BytesPerSecond.Value / 1024 / 1024:F1} MB/s";
             DownloadProgress.IsIndeterminate = value.Percentage is null;
             if (value.Percentage is not null) DownloadProgress.Value = value.Percentage.Value * 100;
         });
