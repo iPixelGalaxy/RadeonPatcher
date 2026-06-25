@@ -624,8 +624,6 @@ public partial class MainWindow : Window
         _settings.CustomSupportUrl = CustomUrlCheck.IsChecked == true ? SupportUrlBox.Text.Trim() : null;
         var currentSettings = UserSettingsStore.Load();
         _settings.IgnoredAppUpdateVersion = currentSettings.IgnoredAppUpdateVersion;
-        _settings.LastAppUpdateReminderVersion = currentSettings.LastAppUpdateReminderVersion;
-        _settings.LastAppUpdateReminderAt = currentSettings.LastAppUpdateReminderAt;
         UserSettingsStore.Save(_settings);
     }
 

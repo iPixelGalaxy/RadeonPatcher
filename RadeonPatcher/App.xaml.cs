@@ -42,8 +42,7 @@ public partial class App : System.Windows.Application
 
         var settings = UserSettingsStore.Load();
         var updateVersion = FormatVersion(update.LatestVersion);
-        if (string.Equals(settings.IgnoredAppUpdateVersion, updateVersion, StringComparison.OrdinalIgnoreCase) ||
-            IsReminderDeferred(settings, updateVersion))
+        if (string.Equals(settings.IgnoredAppUpdateVersion, updateVersion, StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
@@ -59,28 +58,8 @@ public partial class App : System.Windows.Application
         if (prompt.PromptResult == AppUpdatePromptResult.IgnoreUpdate)
         {
             settings.IgnoredAppUpdateVersion = updateVersion;
-            settings.LastAppUpdateReminderVersion = null;
-            settings.LastAppUpdateReminderAt = null;
         }
-        else
-        {
-            settings.LastAppUpdateReminderVersion = updateVersion;
-            settings.LastAppUpdateReminderAt = DateTimeOffset.UtcNow;
-        }
-
         UserSettingsStore.Save(settings);
-    }
-
-    private static bool IsReminderDeferred(UserSettings settings, string updateVersion)
-    {
-        if (!string.Equals(settings.LastAppUpdateReminderVersion, updateVersion, StringComparison.OrdinalIgnoreCase) ||
-            settings.LastAppUpdateReminderAt is null)
-        {
-            return false;
-        }
-
-        var minutes = Math.Max(settings.UpdateCheckFrequencyMinutes, 60);
-        return DateTimeOffset.UtcNow - settings.LastAppUpdateReminderAt.Value < TimeSpan.FromMinutes(minutes);
     }
 
     private static string FormatVersion(Version version) => $"{version.Major}.{version.Minor}.{version.Build}";
