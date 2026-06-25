@@ -63,7 +63,7 @@ public partial class MainWindow : Window
             _hardware = await hardwareTask;
             if (_hardware.IsUpdateCheckServiceInstalled)
             {
-                await _workflow.EnsureUpdateCheckServiceCurrentAsync(Log);
+                await _workflow.EnsureUpdateCheckServiceCurrentAsync(GetSavedUpdateCheckFrequency(), Log);
             }
             _hasDownloadCache = _workflow.HasDownloadCache();
             var displayForced = IsForcedVersionCurrent(_settings.LastInstalledDisplayPackageAt);
@@ -349,7 +349,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var dialog = new UpdateCheckServiceInstallDialog { Owner = this };
+        var dialog = new UpdateCheckServiceInstallDialog(checkFrequency: GetSavedUpdateCheckFrequency()) { Owner = this };
         if (dialog.ShowDialog() != true)
         {
             return;
@@ -625,6 +625,14 @@ public partial class MainWindow : Window
         var currentSettings = UserSettingsStore.Load();
         _settings.IgnoredAppUpdateVersion = currentSettings.IgnoredAppUpdateVersion;
         UserSettingsStore.Save(_settings);
+    }
+
+    private TimeSpan GetSavedUpdateCheckFrequency()
+    {
+        var minutes = _settings.UpdateCheckFrequencyMinutes > 0
+            ? _settings.UpdateCheckFrequencyMinutes
+            : 6 * 60;
+        return TimeSpan.FromMinutes(Math.Max(minutes, 60));
     }
 
     private async Task Busy(Func<Task> action)

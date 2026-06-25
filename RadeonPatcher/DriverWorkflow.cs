@@ -288,7 +288,7 @@ public sealed class DriverWorkflow : IDisposable
         log("Downloaded driver cache cleared.");
     }
 
-    public async Task EnsureUpdateCheckServiceCurrentAsync(Action<string> log)
+    public async Task EnsureUpdateCheckServiceCurrentAsync(TimeSpan checkFrequency, Action<string> log)
     {
         var serviceExe = Path.Combine(WorkRoot, "RadeonPatcherUpdateCheck.exe");
         byte[] current = [];
@@ -309,7 +309,7 @@ public sealed class DriverWorkflow : IDisposable
 
         log("Updating installed update checker helper.");
         await UninstallUpdateCheckServiceAsync(log);
-        await InstallUpdateCheckServiceAsync(checkOnBoot: true, TimeSpan.FromHours(24), log);
+        await InstallUpdateCheckServiceAsync(checkOnBoot: true, checkFrequency, log);
     }
 
     public async Task InstallUpdateCheckServiceAsync(bool checkOnBoot, TimeSpan checkFrequency, Action<string> log)

@@ -19,7 +19,7 @@
         <StackPanel Grid.Row="2" Margin="0,0,0,22">
             <CheckBox x:Name="CheckOnBootBox" Margin="0,0,0,14" Content="Check on boot" IsChecked="True"/>
             <TextBlock Margin="0,0,0,6" Text="Check frequency"/>
-            <ComboBox x:Name="FrequencyBox" Height="34" SelectedIndex="3"/>
+            <ComboBox x:Name="FrequencyBox" Height="34"/>
         </StackPanel>
 
         <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right">

@@ -5,12 +5,17 @@ namespace RadeonPatcher;
 public partial class UpdateCheckServiceInstallDialog : Window
 {
     public bool CheckOnBoot { get; private set; } = true;
-    public TimeSpan CheckFrequency { get; private set; } = TimeSpan.FromHours(24);
+    public TimeSpan CheckFrequency { get; private set; } = TimeSpan.FromHours(6);
 
-    public UpdateCheckServiceInstallDialog()
+    public UpdateCheckServiceInstallDialog(bool checkOnBoot = true, TimeSpan? checkFrequency = null)
     {
         InitializeComponent();
-        FrequencyBox.ItemsSource = new[]
+        CheckOnBoot = checkOnBoot;
+        CheckFrequency = checkFrequency is { } frequency && frequency >= TimeSpan.FromHours(1)
+            ? frequency
+            : TimeSpan.FromHours(6);
+        CheckOnBootBox.IsChecked = CheckOnBoot;
+        var options = new[]
         {
             new UpdateCheckFrequencyOption("Every hour", TimeSpan.FromHours(1)),
             new UpdateCheckFrequencyOption("Every 6 hours", TimeSpan.FromHours(6)),
@@ -18,6 +23,10 @@ public partial class UpdateCheckServiceInstallDialog : Window
             new UpdateCheckFrequencyOption("Every 24 hours", TimeSpan.FromHours(24)),
             new UpdateCheckFrequencyOption("Every 7 days", TimeSpan.FromDays(7))
         };
+        FrequencyBox.ItemsSource = options;
+        FrequencyBox.SelectedItem = options
+            .OrderBy(option => Math.Abs((option.Interval - CheckFrequency).TotalMinutes))
+            .First();
         SourceInitialized += (_, _) => DialogTheme.ApplyTitleBar(this);
     }
 

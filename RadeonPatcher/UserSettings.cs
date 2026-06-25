@@ -16,7 +16,7 @@ public sealed class UserSettings
     public DateTimeOffset? LastInstalledDisplayPackageAt { get; set; }
     public DateTimeOffset? LastInstalledAudioDriverAt { get; set; }
     public string? LastApplicationPath { get; set; }
-    public int UpdateCheckFrequencyMinutes { get; set; } = 24 * 60;
+    public int UpdateCheckFrequencyMinutes { get; set; } = 6 * 60;
     public string? IgnoredAppUpdateVersion { get; set; }
 }
 
