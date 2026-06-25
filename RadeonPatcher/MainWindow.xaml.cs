@@ -328,13 +328,38 @@ public partial class MainWindow : Window
     private async void UpdateCheckServiceButton_Click(object sender, RoutedEventArgs e)
     {
         var hardware = _hardware ?? await _workflow.GetHardwareInfoAsync();
+        if (hardware.IsUpdateCheckServiceInstalled)
+        {
+            if (!AppDialog.Confirm(
+                this,
+                "Uninstall update check service",
+                "Are you sure you want to uninstall the update check service?",
+                "Uninstall",
+                "Cancel"))
+            {
+                return;
+            }
+
+            await Busy(async () =>
+            {
+                await _workflow.UninstallUpdateCheckServiceAsync(Log);
+                _hardware = hardware with { IsUpdateCheckServiceInstalled = false };
+                UpdateCheckServiceButtonText.Text = "Install Update Check Service";
+            });
+            return;
+        }
+
+        var dialog = new UpdateCheckServiceInstallDialog { Owner = this };
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
         await Busy(async () =>
         {
-            var installed = await _workflow.ToggleUpdateCheckServiceAsync(hardware.IsUpdateCheckServiceInstalled, Log);
-            _hardware = hardware with { IsUpdateCheckServiceInstalled = installed };
-            UpdateCheckServiceButtonText.Text = installed
-                ? "Uninstall Update Check Service"
-                : "Install Update Check Service";
+            await _workflow.InstallUpdateCheckServiceAsync(dialog.CheckOnBoot, dialog.CheckFrequency, Log);
+            _hardware = hardware with { IsUpdateCheckServiceInstalled = true };
+            UpdateCheckServiceButtonText.Text = "Uninstall Update Check Service";
         });
     }
 

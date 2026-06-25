@@ -288,18 +288,6 @@ public sealed class DriverWorkflow : IDisposable
         log("Downloaded driver cache cleared.");
     }
 
-    public async Task<bool> ToggleUpdateCheckServiceAsync(bool installed, Action<string> log)
-    {
-        if (installed)
-        {
-            await UninstallUpdateCheckServiceAsync(log);
-            return false;
-        }
-
-        await InstallUpdateCheckServiceAsync(log);
-        return true;
-    }
-
     public async Task EnsureUpdateCheckServiceCurrentAsync(Action<string> log)
     {
         var serviceExe = Path.Combine(WorkRoot, "RadeonPatcherUpdateCheck.exe");
@@ -321,8 +309,44 @@ public sealed class DriverWorkflow : IDisposable
 
         log("Updating installed update checker helper.");
         await UninstallUpdateCheckServiceAsync(log);
-        await InstallUpdateCheckServiceAsync(log);
+        await InstallUpdateCheckServiceAsync(checkOnBoot: true, TimeSpan.FromHours(24), log);
     }
+
+    public async Task InstallUpdateCheckServiceAsync(bool checkOnBoot, TimeSpan checkFrequency, Action<string> log)
+    {
+        if (checkFrequency < TimeSpan.FromHours(1))
+        {
+            throw new ArgumentOutOfRangeException(nameof(checkFrequency), "Update check frequency must be at least 1 hour.");
+        }
+
+        Directory.CreateDirectory(WorkRoot);
+        var serviceExe = Path.Combine(WorkRoot, "RadeonPatcherUpdateCheck.exe");
+        await ExtractEmbeddedFolderAsync("UpdateChecker\\", WorkRoot);
+
+        var startTime = DateTime.Now.AddMinutes(10).ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+        var frequencyMinutes = (int)Math.Ceiling(checkFrequency.TotalMinutes);
+        var bootTrigger = checkOnBoot ? "$triggers += New-ScheduledTaskTrigger -AtStartup" : "";
+        var scheduleDescription = checkOnBoot
+            ? $"at Windows boot and every {FormatInterval(checkFrequency)}"
+            : $"every {FormatInterval(checkFrequency)}";
+        var script = $$"""
+            $ErrorActionPreference = 'Stop'
+            $taskName = 'RadeonPatcher Update Check'
+            $exe = '{{serviceExe.Replace("'", "''")}}'
+            $action = New-ScheduledTaskAction -Execute $exe -Argument '--scheduled'
+            $triggers = @()
+            {{bootTrigger}}
+            $triggers += New-ScheduledTaskTrigger -Once -At '{{startTime}}' -RepetitionInterval (New-TimeSpan -Minutes {{frequencyMinutes}}) -RepetitionDuration (New-TimeSpan -Days 3650)
+            $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 15)
+            $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive
+            Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $triggers -Settings $settings -Principal $principal -Force | Out-Null
+            """;
+        log("Installing non-elevated update check scheduled task.");
+        await RunPowerShellAsync(script);
+        log($"Update check service installed. It will run {scheduleDescription}.");
+    }
+
+    public Task UninstallUpdateCheckServiceAsync(Action<string> log) => RemoveUpdateCheckServiceAsync(log);
 
     public async Task RemoveAdrenalinAsync(Action<string> log)
     {
@@ -577,31 +601,7 @@ public sealed class DriverWorkflow : IDisposable
         return new UpdateCheckResult(updateAvailable, currentVersion, latest, message);
     }
 
-    private async Task InstallUpdateCheckServiceAsync(Action<string> log)
-    {
-        Directory.CreateDirectory(WorkRoot);
-        var serviceExe = Path.Combine(WorkRoot, "RadeonPatcherUpdateCheck.exe");
-        await ExtractEmbeddedFolderAsync("UpdateChecker\\", WorkRoot);
-
-        var startTime = DateTime.Now.AddMinutes(10).ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
-        var script = $$"""
-            $ErrorActionPreference = 'Stop'
-            $taskName = 'RadeonPatcher Update Check'
-            $exe = '{{serviceExe.Replace("'", "''")}}'
-            $action = New-ScheduledTaskAction -Execute $exe -Argument '--scheduled'
-            $triggers = @()
-            $triggers += New-ScheduledTaskTrigger -AtStartup
-            $triggers += New-ScheduledTaskTrigger -Daily -At '{{startTime}}'
-            $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 15)
-            $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive
-            Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $triggers -Settings $settings -Principal $principal -Force | Out-Null
-            """;
-        log("Installing non-elevated update check scheduled task.");
-        await RunPowerShellAsync(script);
-        log("Update check service installed. It will run at Windows boot and once every 24 hours.");
-    }
-
-    private async Task UninstallUpdateCheckServiceAsync(Action<string> log)
+    private async Task RemoveUpdateCheckServiceAsync(Action<string> log)
     {
         const string taskName = "RadeonPatcher Update Check";
         log("Removing update check service.");
@@ -620,6 +620,24 @@ public sealed class DriverWorkflow : IDisposable
         }
 
         log("Update check service removed.");
+    }
+
+    private static string FormatInterval(TimeSpan interval)
+    {
+        if (interval.TotalDays >= 1 && interval.TotalDays % 1 == 0)
+        {
+            var days = (int)interval.TotalDays;
+            return days == 1 ? "1 day" : $"{days} days";
+        }
+
+        if (interval.TotalHours >= 1 && interval.TotalHours % 1 == 0)
+        {
+            var hours = (int)interval.TotalHours;
+            return hours == 1 ? "1 hour" : $"{hours} hours";
+        }
+
+        var minutes = (int)Math.Ceiling(interval.TotalMinutes);
+        return minutes == 1 ? "1 minute" : $"{minutes} minutes";
     }
 
     private async Task<string> DownloadDriverAsync(DriverRelease driver, bool force, Action<string> log)
