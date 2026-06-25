@@ -627,13 +627,13 @@ public sealed class DriverWorkflow : IDisposable
         if (interval.TotalDays >= 1 && interval.TotalDays % 1 == 0)
         {
             var days = (int)interval.TotalDays;
-            return days == 1 ? "1 day" : $"{days} days";
+            return days == 1 ? "day" : $"{days} days";
         }
 
         if (interval.TotalHours >= 1 && interval.TotalHours % 1 == 0)
         {
             var hours = (int)interval.TotalHours;
-            return hours == 1 ? "1 hour" : $"{hours} hours";
+            return hours == 1 ? "hour" : $"{hours} hours";
         }
 
         var minutes = (int)Math.Ceiling(interval.TotalMinutes);

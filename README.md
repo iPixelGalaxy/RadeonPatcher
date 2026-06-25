@@ -1,8 +1,8 @@
 # RadeonPatcher
 
-⚠️ Disclaimer: This project is coded with AI. I am determine to squash any bugs and am happy to take any feed back in issues.
+⚠️ This project is coded with AI. I am determined to squash any bugs and am happy to take any feed back in issues.
 
-⚠️ Currently only tested with the RX 9070 XT as I don't have any other GPUs, but this should work with any modern AMD GPU.
+⚠️ Only tested with the RX 9070 XT as I don't have any other GPUs, but this should work with any modern AMD GPU.
 
 RadeonPatcher is an independent Windows utility for downloading, patching, signing, installing, and removing Radeon display, AMD HD Audio, and AMD Software packages.
 
