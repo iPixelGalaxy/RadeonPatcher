@@ -358,6 +358,8 @@ public partial class MainWindow : Window
         await Busy(async () =>
         {
             await _workflow.InstallUpdateCheckServiceAsync(dialog.CheckOnBoot, dialog.CheckFrequency, Log);
+            _settings.UpdateCheckFrequencyMinutes = (int)Math.Ceiling(dialog.CheckFrequency.TotalMinutes);
+            SaveSettings();
             _hardware = hardware with { IsUpdateCheckServiceInstalled = true };
             UpdateCheckServiceButtonText.Text = "Uninstall Update Check Service";
         });
@@ -620,6 +622,10 @@ public partial class MainWindow : Window
         _settings.InstallAudioDriver = AudioCheck.IsChecked == true;
         _settings.AutoClearDownloadedCache = AutoClearDownloadCacheCheck.IsChecked == true;
         _settings.CustomSupportUrl = CustomUrlCheck.IsChecked == true ? SupportUrlBox.Text.Trim() : null;
+        var currentSettings = UserSettingsStore.Load();
+        _settings.IgnoredAppUpdateVersion = currentSettings.IgnoredAppUpdateVersion;
+        _settings.LastAppUpdateReminderVersion = currentSettings.LastAppUpdateReminderVersion;
+        _settings.LastAppUpdateReminderAt = currentSettings.LastAppUpdateReminderAt;
         UserSettingsStore.Save(_settings);
     }
 
