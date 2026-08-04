@@ -17,5 +17,6 @@
 
   <ItemGroup>
     <Content Include="..\RadeonPatcher\Resources\AMDSoftwareConsumer.ico" Link="AMDSoftwareConsumer.ico" />
+    <Compile Include="..\RadeonPatcher\AmdCpuGraphicsHardware.cs" Link="AmdCpuGraphicsHardware.cs" />
   </ItemGroup>
 </Project>

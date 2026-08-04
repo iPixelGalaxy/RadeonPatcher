@@ -301,7 +301,7 @@ public sealed class DriverWorkflow : IDisposable
         adapter is not null &&
         IsAmdAdapter(adapter) &&
         (IsCpuGraphicsName(adapter.Name) ||
-         Regex.IsMatch(adapter.InstanceId ?? "", @"PCI\\VEN_1002&DEV_(1114|13C0|15BF|15C8|164C|164D|164E|1900|1901|1902)", RegexOptions.IgnoreCase));
+         AmdCpuGraphicsHardware.IsCpuGraphicsDevice(adapter.InstanceId));
 
     public async Task<IReadOnlyList<DriverRelease>> GetAvailableDriversAsync(string supportUrl, Action<string> log, bool forceRefresh = false)
     {
@@ -605,7 +605,7 @@ public sealed class DriverWorkflow : IDisposable
             $gpu = Get-CimInstance Win32_PnPEntity | Where-Object {
               $_.PNPDeviceID -like 'PCI\VEN_1002*' -and
               ($_.PNPClass -eq 'Display' -or $_.ClassGuid -eq '{4d36e968-e325-11ce-bfc1-08002be10318}' -or $_.Service -match 'BasicDisplay|amdwddmg|amdkmdag')
-            } | Sort-Object @{ Expression = { if ($_.PNPDeviceID -match 'DEV_(1114|13C0|15BF|15C8|164C|164D|164E|1900|1901|1902)') { 1 } else { 0 } } } | Select-Object -First 1
+            } | Sort-Object @{ Expression = { if ($_.PNPDeviceID -match 'DEV_(CPU_GRAPHICS_DEVICE_IDS)') { 1 } else { 0 } } } | Select-Object -First 1
             $videoId = $null
             if ($gpu.Service) {
               $videoId = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\$($gpu.Service)\Video" -ErrorAction SilentlyContinue).VideoID
@@ -626,7 +626,7 @@ public sealed class DriverWorkflow : IDisposable
               }
             }
             [pscustomobject]@{ VideoId = $videoId; AdapterFiles = $entries } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $backupRoot 'adapter-settings.json') -Encoding UTF8
-            """;
+            """.Replace("CPU_GRAPHICS_DEVICE_IDS", AmdCpuGraphicsHardware.DeviceIdAlternation, StringComparison.Ordinal);
         log("Backing up AMD preferences and custom display settings.");
         await RunPowerShellAsync(script);
         log("AMD settings backup saved.");
@@ -650,7 +650,7 @@ public sealed class DriverWorkflow : IDisposable
             $gpu = Get-CimInstance Win32_PnPEntity | Where-Object {
               $_.PNPDeviceID -like 'PCI\VEN_1002*' -and
               ($_.PNPClass -eq 'Display' -or $_.ClassGuid -eq '{4d36e968-e325-11ce-bfc1-08002be10318}' -or $_.Service -match 'BasicDisplay|amdwddmg|amdkmdag')
-            } | Sort-Object @{ Expression = { if ($_.PNPDeviceID -match 'DEV_(1114|13C0|15BF|15C8|164C|164D|164E|1900|1901|1902)') { 1 } else { 0 } } } | Select-Object -First 1
+            } | Sort-Object @{ Expression = { if ($_.PNPDeviceID -match 'DEV_(CPU_GRAPHICS_DEVICE_IDS)') { 1 } else { 0 } } } | Select-Object -First 1
             $newVideoId = $null
             if ($gpu.Service) {
               $newVideoId = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\$($gpu.Service)\Video" -ErrorAction SilentlyContinue).VideoID
@@ -666,7 +666,7 @@ public sealed class DriverWorkflow : IDisposable
               Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue
               if ($LASTEXITCODE -ne 0) { throw "Could not restore AMD display settings from $file." }
             }
-            """;
+            """.Replace("CPU_GRAPHICS_DEVICE_IDS", AmdCpuGraphicsHardware.DeviceIdAlternation, StringComparison.Ordinal);
         if (!Directory.Exists(AdrenalinBackupRoot))
         {
             return;
