@@ -51,7 +51,7 @@ public sealed record DriverRelease(
     string SupportUrl);
 
 public sealed record DriverDownloadProgress(
-    string FileName,
+    string DriverVersion,
     long DownloadedBytes,
     long? TotalBytes,
     double? BytesPerSecond,
@@ -847,7 +847,6 @@ public sealed class DriverWorkflow : IDisposable
         response.EnsureSuccessStatusCode();
         await using var source = await response.Content.ReadAsStreamAsync();
         var temporaryDestination = destination + ".partial";
-        var fileName = Path.GetFileName(destination);
         var totalBytes = response.Content.Headers.ContentLength is > 0 ? response.Content.Headers.ContentLength : null;
         var downloadedBytes = 0L;
         double? bytesPerSecond = null;
@@ -857,7 +856,7 @@ public sealed class DriverWorkflow : IDisposable
         var progressStarted = false;
         try
         {
-            progress?.Report(CreateDownloadProgress(fileName, downloadedBytes, totalBytes, bytesPerSecond));
+            progress?.Report(CreateDownloadProgress(driver.VersionText, downloadedBytes, totalBytes, bytesPerSecond));
             progressStarted = true;
             await using (var target = File.Create(temporaryDestination))
             {
@@ -875,7 +874,7 @@ public sealed class DriverWorkflow : IDisposable
                     bytesPerSecond = bytesPerSecond is null
                         ? instantaneousSpeed
                         : (bytesPerSecond.Value * 0.75) + (instantaneousSpeed * 0.25);
-                    progress?.Report(CreateDownloadProgress(fileName, downloadedBytes, totalBytes, bytesPerSecond));
+                    progress?.Report(CreateDownloadProgress(driver.VersionText, downloadedBytes, totalBytes, bytesPerSecond));
                     lastReportAt = stopwatch.Elapsed;
                     lastReportBytes = downloadedBytes;
                 }
@@ -892,13 +891,13 @@ public sealed class DriverWorkflow : IDisposable
         finally
         {
             if (progressStarted)
-                progress?.Report(CreateDownloadProgress(fileName, downloadedBytes, totalBytes, bytesPerSecond) with { IsComplete = true });
+                progress?.Report(CreateDownloadProgress(driver.VersionText, downloadedBytes, totalBytes, bytesPerSecond) with { IsComplete = true });
             if (File.Exists(temporaryDestination)) File.Delete(temporaryDestination);
         }
     }
 
     private static DriverDownloadProgress CreateDownloadProgress(
-        string fileName,
+        string driverVersion,
         long downloadedBytes,
         long? totalBytes,
         double? bytesPerSecond)
@@ -907,7 +906,7 @@ public sealed class DriverWorkflow : IDisposable
         if (totalBytes is > 0 && downloadedBytes < totalBytes && bytesPerSecond is > 0)
             estimatedRemaining = TimeSpan.FromSeconds((totalBytes.Value - downloadedBytes) / bytesPerSecond.Value);
 
-        return new DriverDownloadProgress(fileName, downloadedBytes, totalBytes, bytesPerSecond, estimatedRemaining);
+        return new DriverDownloadProgress(driverVersion, downloadedBytes, totalBytes, bytesPerSecond, estimatedRemaining);
     }
 
     private async Task<string> ExtractPackageAsync(string packageExe, Action<string> log)

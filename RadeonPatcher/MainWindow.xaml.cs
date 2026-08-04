@@ -831,11 +831,11 @@ public partial class MainWindow : Window
         {
             var percentage = Math.Clamp(progress.DownloadedBytes * 100d / progress.TotalBytes.Value, 0, 100);
             DriverDownloadProgressBar.Value = percentage;
-            DownloadStatusText.Text = $"Downloading {progress.FileName}: {FormatMegabytes(progress.DownloadedBytes)} / {FormatMegabytes(progress.TotalBytes.Value)} ({percentage:0}%)";
+            DownloadStatusText.Text = $"Downloading AMD driver {progress.DriverVersion}: {FormatMegabytes(progress.DownloadedBytes)} / {FormatMegabytes(progress.TotalBytes.Value)} ({percentage:0}%)";
         }
         else
         {
-            DownloadStatusText.Text = $"Downloading {progress.FileName}: {FormatMegabytes(progress.DownloadedBytes)}";
+            DownloadStatusText.Text = $"Downloading AMD driver {progress.DriverVersion}: {FormatMegabytes(progress.DownloadedBytes)}";
         }
 
         var speedText = progress.BytesPerSecond is > 0
