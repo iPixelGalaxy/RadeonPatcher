@@ -465,6 +465,10 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
                 <Grid Grid.Column="0" Margin="0,0,18,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
@@ -474,19 +478,18 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                     <TextBlock FontWeight="SemiBold" Text="Detected hardware"/>
                     <TextBlock x:Name="GpuText" Grid.Row="1" Margin="0,8,0,0" TextWrapping="Wrap"/>
                     <Button x:Name="RefreshButton" Grid.Column="1" Grid.RowSpan="2" Width="130" Height="34" HorizontalAlignment="Left" Content="Refresh" Click="RefreshButton_Click"/>
                     <TextBlock x:Name="DisplayDriverText" Grid.Row="2" Margin="0,8,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
                     <TextBlock x:Name="AudioText" Grid.Row="2" Grid.Column="1" Margin="0,8,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
-                    <TextBlock x:Name="CpuGraphicsText" Grid.Row="3" Grid.ColumnSpan="2" Margin="0,8,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
                 </Grid>
                 <StackPanel Grid.Column="1">
                     <TextBlock FontWeight="SemiBold" Text="System"/>
                     <TextBlock x:Name="OsText" Margin="0,8,0,0"/>
                 </StackPanel>
+                <TextBlock x:Name="CpuGraphicsText" Grid.Row="1" Grid.ColumnSpan="2" Margin="0,8,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="NoWrap"/>
             </Grid>
         </Border>
 
