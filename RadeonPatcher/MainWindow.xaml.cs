@@ -93,7 +93,7 @@ public partial class MainWindow : Window
             CpuGraphicsText.Text = _hardware.CpuGraphicsAdapter is not null
                 ? $"CPU Graphics: {_hardware.CpuGraphicsAdapter.Name ?? "AMD Radeon Graphics"} ({_hardware.CpuGraphicsAdapter.PackageVersion ?? _hardware.CpuGraphicsAdapter.DriverVersion ?? "driver unknown"})"
                 : !string.IsNullOrWhiteSpace(_hardware.CpuSupportUrl)
-                    ? $"CPU Graphics: {_hardware.CpuName ?? "AMD processor"}; integrated graphics disabled in firmware."
+                    ? $"CPU Graphics: {_hardware.CpuName ?? "AMD processor"} integrated graphics disabled in firmware."
                     : "";
 
             var savedCustomUrl = _settings.CustomSupportUrl;
