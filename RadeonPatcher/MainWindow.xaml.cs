@@ -831,7 +831,7 @@ public partial class MainWindow : Window
         {
             var percentage = Math.Clamp(progress.DownloadedBytes * 100d / progress.TotalBytes.Value, 0, 100);
             DriverDownloadProgressBar.Value = percentage;
-            DownloadStatusText.Text = $"AMD Driver {progress.DriverVersion}: {percentage:0}% {FormatMegabytes(progress.DownloadedBytes)} / {FormatMegabytes(progress.TotalBytes.Value)}";
+            DownloadStatusText.Text = $"AMD Driver {progress.DriverVersion}: [{percentage:0}%] {FormatMegabytes(progress.DownloadedBytes)} / {FormatMegabytes(progress.TotalBytes.Value)}";
         }
         else
         {
