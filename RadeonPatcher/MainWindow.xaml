@@ -461,35 +461,25 @@
 
         <Border Grid.Row="1" Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource PanelBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14" Margin="0,0,0,14">
             <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
-                <Grid Grid.Column="0" Margin="0,0,18,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
-                    <TextBlock FontWeight="SemiBold" Text="Detected hardware"/>
-                    <TextBlock x:Name="GpuText" Grid.Row="1" Margin="0,8,0,0" TextWrapping="Wrap"/>
-                    <Button x:Name="RefreshButton" Grid.Column="1" Grid.RowSpan="2" Width="130" Height="34" HorizontalAlignment="Left" Content="Refresh" Click="RefreshButton_Click"/>
-                    <TextBlock x:Name="DisplayDriverText" Grid.Row="2" Margin="0,8,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
-                    <TextBlock x:Name="AudioText" Grid.Row="2" Grid.Column="1" Margin="0,8,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
-                </Grid>
-                <StackPanel Grid.Column="1">
-                    <TextBlock FontWeight="SemiBold" Text="System"/>
-                    <TextBlock x:Name="OsText" Margin="0,8,0,0"/>
+                <StackPanel Orientation="Horizontal">
+                    <StackPanel>
+                        <TextBlock FontWeight="SemiBold" Text="Detected hardware"/>
+                        <TextBlock x:Name="GpuText" Margin="0,8,0,0" TextWrapping="NoWrap"/>
+                    </StackPanel>
+                    <Button x:Name="RefreshButton" Width="130" Height="34" Margin="18,0,0,0" VerticalAlignment="Center" Content="Refresh" Click="RefreshButton_Click"/>
+                    <TextBlock x:Name="AudioText" Margin="18,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="NoWrap"/>
+                    <StackPanel Margin="18,0,0,0">
+                        <TextBlock FontWeight="SemiBold" Text="System"/>
+                        <TextBlock x:Name="OsText" Margin="0,8,0,0" TextWrapping="NoWrap"/>
+                    </StackPanel>
                 </StackPanel>
-                <TextBlock x:Name="CpuGraphicsText" Grid.Row="1" Grid.ColumnSpan="2" Margin="0,8,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="NoWrap"/>
+                <TextBlock x:Name="DisplayDriverText" Grid.Row="1" Margin="0,8,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="NoWrap"/>
+                <TextBlock x:Name="CpuGraphicsText" Grid.Row="2" Margin="0,8,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="NoWrap"/>
             </Grid>
         </Border>
 
@@ -534,6 +524,7 @@
                     <StackPanel x:Name="InstallOptionsPanel" Visibility="Hidden">
                         <Separator Margin="0,18,0,14"/>
                         <CheckBox x:Name="InstallDisplayDriverCheck" Content="Install GPU Driver" IsChecked="True" Margin="0,0,0,10"/>
+                        <CheckBox x:Name="InstallCpuGraphicsDriverCheck" Content="Install iGPU Driver" IsChecked="True" Margin="0,0,0,10" Visibility="Collapsed"/>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                             <CheckBox x:Name="ServerCompatCheck" Content="Enable Windows Server Compatibility"/>
                             <TextBlock Text=" (?)" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" Cursor="Help" ToolTip="Standard AMD Drivers only support Workstation editions with the .1 flag, while Server is .3. The driver works perfectly, unsure why AMD made this choice."/>

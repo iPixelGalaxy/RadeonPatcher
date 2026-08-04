@@ -18,5 +18,6 @@
   <ItemGroup>
     <Content Include="..\RadeonPatcher\Resources\AMDSoftwareConsumer.ico" Link="AMDSoftwareConsumer.ico" />
     <Compile Include="..\RadeonPatcher\AmdCpuGraphicsHardware.cs" Link="AmdCpuGraphicsHardware.cs" />
+    <Compile Include="..\RadeonPatcher\DisplayTopology.cs" Link="DisplayTopology.cs" />
   </ItemGroup>
 </Project>

@@ -6,6 +6,7 @@ namespace RadeonPatcher;
 public sealed class UserSettings
 {
     public bool InstallGpuDriver { get; set; } = true;
+    public bool InstallCpuGraphicsDriver { get; set; } = true;
     public bool InstallAdrenalin { get; set; } = true;
     public bool InstallAudioDriver { get; set; } = true;
     public bool AutoClearDownloadedCache { get; set; } = true;
@@ -13,8 +14,10 @@ public sealed class UserSettings
     public string? CustomCpuSupportUrl { get; set; }
     public string? SelectedDriverVersion { get; set; }
     public string? LastInstalledDisplayPackageVersion { get; set; }
+    public string? LastInstalledCpuGraphicsPackageVersion { get; set; }
     public string? LastInstalledAudioDriverVersion { get; set; }
     public DateTimeOffset? LastInstalledDisplayPackageAt { get; set; }
+    public DateTimeOffset? LastInstalledCpuGraphicsPackageAt { get; set; }
     public DateTimeOffset? LastInstalledAudioDriverAt { get; set; }
     public string? LastApplicationPath { get; set; }
     public int UpdateCheckFrequencyMinutes { get; set; } = 6 * 60;

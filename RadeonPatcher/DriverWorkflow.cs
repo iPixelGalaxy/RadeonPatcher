@@ -39,7 +39,8 @@ public sealed record DisplayAdapterInfo(
     string? PackageVersion,
     string? VendorId = null,
     string? DriverProviderName = null,
-    bool UsesBasicDisplayDriver = false);
+    bool UsesBasicDisplayDriver = false,
+    bool IsPrimary = false);
 
 public sealed record DriverRelease(
     string DisplayName,
@@ -68,7 +69,8 @@ public sealed record InstallRequest(
     HardwareInfo Hardware,
     DriverSelection? Driver,
     string SupportUrl,
-    bool InstallDisplayDriver,
+    bool InstallPrimaryGpuDriver,
+    bool InstallCpuGraphicsDriver,
     bool EnableServerCompatibility,
     bool InstallAdrenalin,
     bool ReplaceAdrenalin,
@@ -82,7 +84,8 @@ public sealed record UpdateCheckResult(
     string Message);
 
 public sealed record InstallResult(
-    string? DisplayPackageVersion,
+    string? PrimaryGpuPackageVersion,
+    string? CpuGraphicsPackageVersion,
     string? AudioDriverVersion);
 
 [SupportedOSPlatform("windows")]
@@ -136,8 +139,7 @@ public sealed class DriverWorkflow : IDisposable
                   $_.Name -match 'Radeon|NVIDIA|GeForce|Microsoft Basic Display|Video Controller|Display Controller' -or
                   $_.Service -match 'BasicDisplay|amdwddmg|amdkmdag|nvlddmkm'
                 )
-              } |
-              Sort-Object Name)
+              })
             $signedDrivers = Get-CimInstance Win32_PnPSignedDriver
             $aud = $signedDrivers | Where-Object { $_.DeviceClass -eq 'MEDIA' -and ($_.DeviceID -match 'HDAUDIO\\FUNC_01&VEN_1002&DEV_AA01' -or $_.DeviceName -match 'AMD High Definition Audio') } | Select-Object -First 1
             $hasAmdAudioDriver = $aud -and $aud.DriverProviderName -match 'AMD|Advanced Micro Devices' -and $aud.InfName -notmatch '^hdaudio\.inf$'
@@ -189,10 +191,12 @@ public sealed class DriverWorkflow : IDisposable
         {
             PropertyNameCaseInsensitive = true
         }) ?? throw new InvalidOperationException("PowerShell returned invalid hardware information.");
+        var primaryAdapterName = DisplayTopology.GetPrimaryAdapterName();
         var adapters = (hardware.DisplayAdapters ?? [])
             .Select(adapter => adapter with
             {
                 VendorId = GetVendorId(adapter.InstanceId),
+                IsPrimary = string.Equals(adapter.Name?.Trim(), primaryAdapterName, StringComparison.OrdinalIgnoreCase),
                 Name = IsAmdAdapter(adapter)
                     ? GpuModelDatabase.ResolveName(adapter.InstanceId, adapter.Name)
                     : adapter.Name?.Trim(),
@@ -202,13 +206,16 @@ public sealed class DriverWorkflow : IDisposable
             })
             .ToList();
         var cpuGraphics = adapters.FirstOrDefault(IsCpuGraphicsAdapter);
-        var amdTarget = adapters.FirstOrDefault(adapter => IsAmdAdapter(adapter) && !IsCpuGraphicsAdapter(adapter)) ?? cpuGraphics;
-        var primaryDisplay = adapters
+        var fallbackPrimary = adapters
             .OrderBy(adapter => IsCpuGraphicsAdapter(adapter) ? 1 : 0)
             .ThenBy(adapter => adapter.UsesBasicDisplayDriver ? 1 : 0)
             .ThenBy(adapter => string.IsNullOrWhiteSpace(adapter.DriverVersion) ? 1 : 0)
-            .ThenBy(adapter => adapter.Name, StringComparer.OrdinalIgnoreCase)
             .FirstOrDefault();
+        var primaryDisplay = adapters.FirstOrDefault(adapter => adapter.IsPrimary) ?? fallbackPrimary;
+        var primaryAmdGpu = primaryDisplay is not null && IsAmdAdapter(primaryDisplay) && !IsCpuGraphicsAdapter(primaryDisplay)
+            ? primaryDisplay
+            : null;
+        var amdTarget = primaryAmdGpu ?? cpuGraphics;
         return hardware with
         {
             GpuName = amdTarget?.Name,
@@ -350,42 +357,55 @@ public sealed class DriverWorkflow : IDisposable
 
     public async Task<InstallResult> InstallAsync(InstallRequest request, Action<string> log)
     {
-        string? displayPackageVersion = null;
+        string? primaryGpuPackageVersion = null;
+        string? cpuGraphicsPackageVersion = null;
         string? audioDriverVersion = null;
         await EnsurePayloadsAsync();
         if (request.Driver is not null)
         {
-            var packageExe = await DownloadDriverAsync(request.Driver.Primary, false, log);
-            var packageRoot = await ExtractPackageAsync(packageExe, log);
+            var cpuGraphicsIsPrimaryTarget = request.Hardware.CpuGraphicsAdapter is not null &&
+                string.Equals(request.Hardware.CpuGraphicsAdapter.InstanceId, request.Hardware.GpuInstanceId, StringComparison.OrdinalIgnoreCase);
+            var needsPrimaryPackage = request.InstallPrimaryGpuDriver || request.InstallAdrenalin ||
+                request.AudioInstallSource == AudioInstallSource.DriverPackage ||
+                (request.InstallCpuGraphicsDriver && cpuGraphicsIsPrimaryTarget);
+            string? packageRoot = null;
+            if (needsPrimaryPackage)
+            {
+                var packageExe = await DownloadDriverAsync(request.Driver.Primary, false, log);
+                packageRoot = await ExtractPackageAsync(packageExe, log);
+            }
             string? cpuPackageRoot = null;
-            if (request.InstallDisplayDriver && request.Driver.CpuGraphics is not null && request.Hardware.CpuGraphicsAdapter is not null)
+            if (request.InstallCpuGraphicsDriver && !cpuGraphicsIsPrimaryTarget && request.Driver.CpuGraphics is not null && request.Hardware.CpuGraphicsAdapter is not null)
             {
                 log($"Downloading CPU graphics package for {request.Driver.CpuGraphics.VersionText}.");
                 var cpuPackageExe = await DownloadDriverAsync(request.Driver.CpuGraphics, false, log);
                 cpuPackageRoot = await ExtractPackageAsync(cpuPackageExe, log);
             }
 
-            if (request.InstallDisplayDriver)
+            if (request.InstallPrimaryGpuDriver)
             {
+                if (packageRoot is null) throw new InvalidOperationException("Primary GPU package was not prepared.");
                 _ = FindDisplayInf(packageRoot, request.Hardware.GpuInstanceId);
-                if (cpuPackageRoot is not null && request.Hardware.CpuGraphicsAdapter is not null)
-                {
-                    _ = FindDisplayInf(cpuPackageRoot, request.Hardware.CpuGraphicsAdapter.InstanceId);
-                }
-
                 await InstallDisplayDriverAsync(packageRoot, request.Hardware.GpuInstanceId, request.EnableServerCompatibility, request.Driver.Primary, log);
-                if (cpuPackageRoot is not null && request.Hardware.CpuGraphicsAdapter is not null && request.Driver.CpuGraphics is not null)
-                {
-                    await InstallDisplayDriverAsync(cpuPackageRoot, request.Hardware.CpuGraphicsAdapter.InstanceId, request.EnableServerCompatibility, request.Driver.CpuGraphics, log);
-                }
-                displayPackageVersion = request.Driver.VersionText;
+                primaryGpuPackageVersion = request.Driver.VersionText;
+            }
+            if (request.InstallCpuGraphicsDriver && request.Hardware.CpuGraphicsAdapter is not null)
+            {
+                var cpuRoot = cpuGraphicsIsPrimaryTarget ? packageRoot : cpuPackageRoot;
+                var cpuDriver = request.Driver.CpuGraphics ?? request.Driver.Primary;
+                if (cpuRoot is null) throw new InvalidOperationException("CPU graphics package was not prepared.");
+                _ = FindDisplayInf(cpuRoot, request.Hardware.CpuGraphicsAdapter.InstanceId);
+                await InstallDisplayDriverAsync(cpuRoot, request.Hardware.CpuGraphicsAdapter.InstanceId, request.EnableServerCompatibility, cpuDriver, log);
+                cpuGraphicsPackageVersion = cpuDriver.VersionText;
             }
             if (request.InstallAdrenalin)
             {
+                if (packageRoot is null) throw new InvalidOperationException("AMD Software package was not prepared.");
                 await InstallAdrenalinAsync(packageRoot, request.Driver.Primary.VersionText, request.ReplaceAdrenalin, log);
             }
             if (request.AudioInstallSource == AudioInstallSource.DriverPackage)
             {
+                if (packageRoot is null) throw new InvalidOperationException("AMD HD Audio package was not prepared.");
                 audioDriverVersion = await InstallPackageAudioAsync(packageRoot, request.EnableServerCompatibility, log);
             }
         }
@@ -400,7 +420,7 @@ public sealed class DriverWorkflow : IDisposable
             ClearDownloadCache(log);
         }
 
-        return new InstallResult(displayPackageVersion, audioDriverVersion);
+        return new InstallResult(primaryGpuPackageVersion, cpuGraphicsPackageVersion, audioDriverVersion);
     }
 
     public Task ClearDownloadCacheAsync(Action<string> log)

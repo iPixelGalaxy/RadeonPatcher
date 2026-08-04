@@ -56,7 +56,7 @@ internal static class Program
 
     private static async Task<Hardware> DetectHardwareAsync()
     {
-        var script = "$gpu = Get-CimInstance Win32_PnPEntity | Where-Object { $_.PNPDeviceID -like 'PCI\\VEN_1002*' -and ($_.PNPClass -eq 'Display' -or $_.ClassGuid -eq '{4d36e968-e325-11ce-bfc1-08002be10318}' -or $_.Service -match 'BasicDisplay|amdwddmg|amdkmdag') } | Sort-Object @{ Expression = { if ($_.PNPDeviceID -match 'DEV_(CPU_GRAPHICS_DEVICE_IDS)') { 1 } else { 0 } } }, Name | Select-Object -First 1; $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1; [Console]::WriteLine([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$gpu.Name))); [Console]::WriteLine([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$gpu.PNPDeviceID))); [Console]::WriteLine([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$cpu.Name)))"
+        var script = "$gpus = @(Get-CimInstance Win32_PnPEntity | Where-Object { $_.PNPDeviceID -like 'PCI\\VEN_1002*' -and ($_.PNPClass -eq 'Display' -or $_.ClassGuid -eq '{4d36e968-e325-11ce-bfc1-08002be10318}' -or $_.Service -match 'BasicDisplay|amdwddmg|amdkmdag') } | ForEach-Object { [pscustomobject]@{ Name=$_.Name; InstanceId=$_.PNPDeviceID } }); $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1; $entries = @($gpus) + @([pscustomobject]@{ CpuName=$cpu.Name }); [Console]::WriteLine([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($entries | ConvertTo-Json -Compress))))"
             .Replace("CPU_GRAPHICS_DEVICE_IDS", RadeonPatcher.AmdCpuGraphicsHardware.DeviceIdAlternation, StringComparison.Ordinal);
         var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
         var start = new ProcessStartInfo("powershell.exe", $"-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand {encoded}")
@@ -73,9 +73,17 @@ internal static class Program
         var output = await outputTask;
         var error = await errorTask;
         if (process.ExitCode != 0) throw new InvalidOperationException(error.Trim());
-        var lines = output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
-        if (lines.Length < 3) throw new InvalidOperationException("No AMD display adapter was detected.");
-        return new Hardware(Decode(lines[0]), Decode(lines[1]), Decode(lines[2]));
+        var encodedResult = output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(encodedResult)) throw new InvalidOperationException("No AMD display adapter was detected.");
+        var entries = JsonSerializer.Deserialize<List<HardwareEntry>>(Decode(encodedResult)) ?? [];
+        var cpuName = entries.LastOrDefault()?.CpuName ?? "";
+        var adapters = entries.Where(entry => !string.IsNullOrWhiteSpace(entry.InstanceId)).ToList();
+        var primaryName = RadeonPatcher.DisplayTopology.GetPrimaryAdapterName();
+        var primaryGpu = adapters.FirstOrDefault(adapter => string.Equals(adapter.Name, primaryName, StringComparison.OrdinalIgnoreCase) && !IsCpuGraphics(adapter.InstanceId));
+        var cpuGraphics = adapters.FirstOrDefault(adapter => IsCpuGraphics(adapter.InstanceId));
+        var gpu = primaryGpu ?? cpuGraphics ?? adapters.FirstOrDefault(adapter => !IsCpuGraphics(adapter.InstanceId));
+        if (gpu is null) throw new InvalidOperationException("No AMD display adapter was detected.");
+        return new Hardware(gpu.Name!, gpu.InstanceId!, cpuName);
     }
 
     private static string? ResolveSupportUrl(string gpuName, string cpuName)
@@ -169,7 +177,9 @@ internal static class Program
     }
 
     private static string Decode(string value) => Encoding.UTF8.GetString(Convert.FromBase64String(value.Trim()));
+    private static bool IsCpuGraphics(string? instanceId) => Regex.IsMatch(instanceId ?? "", $@"DEV_({RadeonPatcher.AmdCpuGraphicsHardware.DeviceIdAlternation})", RegexOptions.IgnoreCase);
     private sealed record Hardware(string GpuName, string InstanceId, string CpuName);
+    private sealed record HardwareEntry(string? Name, string? InstanceId, string? CpuName = null);
     private sealed record DriverReceipt(string GpuInstanceId, string OriginalInf, string PackageVersion, DateTimeOffset InstalledAt);
     private sealed record CheckerSettings(string? LastApplicationPath);
     private sealed record CheckResult(bool UpdateAvailable, string? CurrentVersion, string LatestVersion, string Message);

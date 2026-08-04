@@ -67,9 +67,11 @@ public partial class MainWindow : Window
             }
             _hasDownloadCache = _workflow.HasDownloadCache();
             var displayForced = IsForcedVersionCurrent(_settings.LastInstalledDisplayPackageAt);
+            var cpuGraphicsForced = IsForcedVersionCurrent(_settings.LastInstalledCpuGraphicsPackageAt);
             var audioForced = IsForcedVersionCurrent(_settings.LastInstalledAudioDriverAt);
-            _canUninstallGpuDriver = displayForced
-                ? !string.IsNullOrWhiteSpace(_settings.LastInstalledDisplayPackageVersion)
+            var gpuTargetIsCpuGraphics = string.Equals(_hardware.CpuGraphicsAdapter?.InstanceId, _hardware.GpuInstanceId, StringComparison.OrdinalIgnoreCase);
+            _canUninstallGpuDriver = (gpuTargetIsCpuGraphics ? cpuGraphicsForced : displayForced)
+                ? !string.IsNullOrWhiteSpace(gpuTargetIsCpuGraphics ? _settings.LastInstalledCpuGraphicsPackageVersion : _settings.LastInstalledDisplayPackageVersion)
                 : !string.IsNullOrWhiteSpace(_hardware.DisplayDriverOriginalInf);
             _canUninstallAudioDriver = audioForced
                 ? !string.IsNullOrWhiteSpace(_settings.LastInstalledAudioDriverVersion)
@@ -77,9 +79,7 @@ public partial class MainWindow : Window
             _canUninstallAdrenalin = _hardware.IsAdrenalinInstalled;
 
             var primaryDisplay = _hardware.PrimaryDisplayAdapter;
-            GpuText.Text = primaryDisplay is null
-                ? "No physical display adapter detected."
-                : $"Primary Display: {primaryDisplay.Name ?? "Unknown display adapter"}";
+            GpuText.Text = FormatGpuList(_hardware);
             DisplayDriverText.Text = primaryDisplay is not null &&
                                      !string.Equals(primaryDisplay.InstanceId, _hardware.GpuInstanceId, StringComparison.OrdinalIgnoreCase)
                 ? primaryDisplay.UsesBasicDisplayDriver
@@ -98,14 +98,16 @@ public partial class MainWindow : Window
                 : _hardware.AudioDriverVersion is null
                 ? "Installed AMD HD Audio Driver: None"
                 : $"Installed AMD HD Audio Driver: {_hardware.AudioDriverVersion}";
-            var cpuName = _hardware.CpuName?.Trim() ?? "AMD processor";
+            var cpuName = FormatCpuDisplayName(_hardware.CpuName);
             CpuGraphicsText.Text = _hardware.CpuGraphicsAdapter is { } cpuGraphics
                 ? cpuGraphics.UsesBasicDisplayDriver
                     ? $"CPU Graphics: {cpuName}. Status: Enabled, using Microsoft Basic Display Adapter."
-                    : $"CPU Graphics: {cpuName}. Status: Enabled ({cpuGraphics.PackageVersion ?? cpuGraphics.DriverVersion ?? "AMD driver not installed"})."
+                    : $"CPU Graphics: {cpuName}. Status: Enabled ({(cpuGraphicsForced ? _settings.LastInstalledCpuGraphicsPackageVersion : cpuGraphics.PackageVersion) ?? cpuGraphics.DriverVersion ?? "AMD driver not installed"})."
                 : !string.IsNullOrWhiteSpace(_hardware.CpuSupportUrl)
                     ? $"CPU Graphics: {cpuName}. Status: Disabled in firmware."
                     : "";
+
+            UpdateInstallTargetControls();
 
             var savedCustomUrl = _settings.CustomSupportUrl;
             var supportUrl = string.IsNullOrWhiteSpace(savedCustomUrl)
@@ -272,7 +274,8 @@ public partial class MainWindow : Window
                 hardware,
                 DriverCombo.SelectedItem as DriverSelection,
                 SupportUrlBox.Text.Trim(),
-                InstallDisplayDriverCheck.IsChecked == true,
+                HasPrimaryAmdGpu() && InstallDisplayDriverCheck.IsChecked == true,
+                _hardware?.CpuGraphicsAdapter is not null && InstallCpuGraphicsDriverCheck.IsChecked == true,
                 hardware.IsServer,
                 AdrenalinCheck.IsChecked == true,
                 hardware.IsAdrenalinInstalled && IsSelectedDriverDifferentFromCurrent(),
@@ -299,10 +302,15 @@ public partial class MainWindow : Window
     private void RememberInstalledVersions(InstallResult result)
     {
         var installedAt = DateTimeOffset.UtcNow;
-        if (result.DisplayPackageVersion is not null)
+        if (result.PrimaryGpuPackageVersion is not null)
         {
-            _settings.LastInstalledDisplayPackageVersion = result.DisplayPackageVersion;
+            _settings.LastInstalledDisplayPackageVersion = result.PrimaryGpuPackageVersion;
             _settings.LastInstalledDisplayPackageAt = installedAt;
+        }
+        if (result.CpuGraphicsPackageVersion is not null)
+        {
+            _settings.LastInstalledCpuGraphicsPackageVersion = result.CpuGraphicsPackageVersion;
+            _settings.LastInstalledCpuGraphicsPackageAt = installedAt;
         }
         if (result.AudioDriverVersion is not null)
         {
@@ -313,13 +321,18 @@ public partial class MainWindow : Window
         _ = RefreshAfterForcedVersionExpiresAsync(installedAt);
     }
 
-    private void RememberRemovedVersions(bool displayRemoved, bool audioRemoved)
+    private void RememberRemovedVersions(bool displayRemoved, bool audioRemoved, bool cpuGraphicsRemoved = false)
     {
         var removedAt = DateTimeOffset.UtcNow;
         if (displayRemoved)
         {
             _settings.LastInstalledDisplayPackageVersion = null;
             _settings.LastInstalledDisplayPackageAt = removedAt;
+        }
+        if (cpuGraphicsRemoved)
+        {
+            _settings.LastInstalledCpuGraphicsPackageVersion = null;
+            _settings.LastInstalledCpuGraphicsPackageAt = removedAt;
         }
         if (audioRemoved)
         {
@@ -332,14 +345,15 @@ public partial class MainWindow : Window
 
     private async Task RefreshAfterInstallAsync(InstallRequest request, InstallResult result)
     {
-        var expectDisplay = result.DisplayPackageVersion is not null;
+        var expectDisplay = result.PrimaryGpuPackageVersion is not null;
+        var expectCpuGraphics = result.CpuGraphicsPackageVersion is not null;
         var expectAudio = result.AudioDriverVersion is not null;
         Log("Refreshing installed driver versions.");
         await RefreshAsync();
-        if (expectDisplay || expectAudio)
+        if (expectDisplay || expectCpuGraphics || expectAudio)
         {
             PromptForRestart("Driver installation finished", "Restart Windows to finish applying the installed AMD drivers.");
-            _ = ObserveInstalledDriverStateAsync(expectDisplay, expectAudio);
+            _ = ObserveInstalledDriverStateAsync(expectDisplay, expectCpuGraphics, expectAudio);
         }
     }
 
@@ -351,12 +365,17 @@ public partial class MainWindow : Window
             ? _settings.LastInstalledDisplayPackageVersion
             : _hardware?.DisplayDriverPackageVersion;
 
+    private string? GetEffectiveCpuGraphicsPackageVersion() =>
+        IsForcedVersionCurrent(_settings.LastInstalledCpuGraphicsPackageAt)
+            ? _settings.LastInstalledCpuGraphicsPackageVersion
+            : _hardware?.CpuGraphicsAdapter?.PackageVersion ?? _hardware?.CpuGraphicsAdapter?.DriverVersion;
+
     private async Task RefreshAfterForcedVersionExpiresAsync(DateTimeOffset installedAt)
     {
         try
         {
             await Task.Delay(ForcedVersionDuration);
-            if (_settings.LastInstalledDisplayPackageAt == installedAt || _settings.LastInstalledAudioDriverAt == installedAt)
+            if (_settings.LastInstalledDisplayPackageAt == installedAt || _settings.LastInstalledCpuGraphicsPackageAt == installedAt || _settings.LastInstalledAudioDriverAt == installedAt)
             {
                 await RefreshAsync();
             }
@@ -367,7 +386,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task ObserveInstalledDriverStateAsync(bool expectDisplay, bool expectAudio)
+    private async Task ObserveInstalledDriverStateAsync(bool expectDisplay, bool expectCpuGraphics, bool expectAudio)
     {
         try
         {
@@ -376,8 +395,9 @@ public partial class MainWindow : Window
                 await Task.Delay(1000);
                 var hardware = await _workflow.GetHardwareInfoAsync();
                 var displayReady = !expectDisplay || (hardware.DisplayDriverVersion is not null && hardware.DisplayDriverPackageVersion is not null);
+                var cpuGraphicsReady = !expectCpuGraphics || (hardware.CpuGraphicsAdapter?.DriverVersion is not null && hardware.CpuGraphicsAdapter?.PackageVersion is not null);
                 var audioReady = !expectAudio || hardware.AudioDriverVersion is not null;
-                if (displayReady && audioReady)
+                if (displayReady && cpuGraphicsReady && audioReady)
                 {
                     Log("Windows finished refreshing installed driver information.");
                     await RefreshAsync();
@@ -453,7 +473,8 @@ public partial class MainWindow : Window
         });
         if (removed)
         {
-            RememberRemovedVersions(displayRemoved: true, audioRemoved: false);
+            var targetIsCpuGraphics = string.Equals(_hardware?.CpuGraphicsAdapter?.InstanceId, _hardware?.GpuInstanceId, StringComparison.OrdinalIgnoreCase);
+            RememberRemovedVersions(displayRemoved: !targetIsCpuGraphics, audioRemoved: false, cpuGraphicsRemoved: targetIsCpuGraphics);
             await RefreshAfterDriverRemovalAsync(expectDisplayRemoved: true, expectAudioRemoved: false);
         }
     }
@@ -506,7 +527,7 @@ public partial class MainWindow : Window
         });
         if (removed)
         {
-            RememberRemovedVersions(displayRemoved: true, audioRemoved: true);
+            RememberRemovedVersions(displayRemoved: true, audioRemoved: true, cpuGraphicsRemoved: _hardware?.CpuGraphicsAdapter is not null);
             await RefreshAfterDriverRemovalAsync(expectDisplayRemoved: true, expectAudioRemoved: true);
         }
     }
@@ -582,6 +603,8 @@ public partial class MainWindow : Window
         {
             SelectedDriverText.Text = "";
             InstallDisplayDriverCheck.Content = "Install GPU Driver";
+            InstallCpuGraphicsDriverCheck.Content = "Install iGPU Driver";
+            UpdateInstallTargetControls();
             UpdateAdrenalinControl();
             return;
         }
@@ -592,20 +615,58 @@ public partial class MainWindow : Window
             _settings.SelectedDriverVersion = driver.VersionText;
             SaveSettings();
         }
-        var currentVersion = GetEffectiveDisplayPackageVersion();
-        if (Version.TryParse(driver.VersionText, out var selected) && Version.TryParse(currentVersion, out var current))
-        {
-            InstallDisplayDriverCheck.Content = selected > current
-                ? "Update GPU Driver"
-                : selected < current
-                    ? "Downgrade GPU Driver"
-                    : "Reinstall GPU Driver";
-            UpdateAdrenalinControl();
-            return;
-        }
-
-        InstallDisplayDriverCheck.Content = "Install GPU Driver";
+        InstallDisplayDriverCheck.Content = GetDriverActionText(driver.VersionText, GetEffectiveDisplayPackageVersion(), "GPU");
+        InstallCpuGraphicsDriverCheck.Content = GetDriverActionText(driver.VersionText, GetEffectiveCpuGraphicsPackageVersion(), "iGPU");
+        UpdateInstallTargetControls();
         UpdateAdrenalinControl();
+    }
+
+    private static string FormatGpuList(HardwareInfo hardware)
+    {
+        var primary = hardware.PrimaryDisplayAdapter;
+        if (primary is null) return "No physical display adapter detected.";
+
+        var lines = new List<string> { $"Primary Display: {primary.Name ?? "Unknown display adapter"}" };
+        lines.AddRange((hardware.DisplayAdapters ?? [])
+            .Where(adapter => !string.Equals(adapter.InstanceId, primary.InstanceId, StringComparison.OrdinalIgnoreCase) &&
+                              !string.Equals(adapter.InstanceId, hardware.CpuGraphicsAdapter?.InstanceId, StringComparison.OrdinalIgnoreCase))
+            .Select(adapter => $"Other GPU: {adapter.Name ?? "Unknown display adapter"}"));
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string FormatCpuDisplayName(string? cpuName)
+    {
+        var name = cpuName?.Trim() ?? "AMD processor";
+        return System.Text.RegularExpressions.Regex.Replace(name, @"\s+\d+\s*[- ]Core Processor\s*$", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    }
+
+    private static string GetDriverActionText(string? selectedVersion, string? currentVersion, string target) =>
+        Version.TryParse(selectedVersion, out var selected) && Version.TryParse(currentVersion, out var current)
+            ? selected > current
+                ? $"Update {target} Driver"
+                : selected < current
+                    ? $"Downgrade {target} Driver"
+                    : $"Reinstall {target} Driver"
+            : $"Install {target} Driver";
+
+    private bool HasPrimaryAmdGpu()
+    {
+        if (_hardware?.PrimaryDisplayAdapter is not { } primary || string.IsNullOrWhiteSpace(_hardware.GpuInstanceId)) return false;
+        return string.Equals(primary.InstanceId, _hardware.GpuInstanceId, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(_hardware.CpuGraphicsAdapter?.InstanceId, _hardware.GpuInstanceId, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void UpdateInstallTargetControls()
+    {
+        var hasPrimaryAmdGpu = HasPrimaryAmdGpu();
+        InstallDisplayDriverCheck.IsEnabled = hasPrimaryAmdGpu;
+        InstallDisplayDriverCheck.ToolTip = hasPrimaryAmdGpu
+            ? null
+            : "Install GPU Driver is available only when Windows primary display uses an AMD discrete GPU.";
+
+        var hasCpuGraphics = _hardware?.CpuGraphicsAdapter is not null;
+        InstallCpuGraphicsDriverCheck.Visibility = hasCpuGraphics ? Visibility.Visible : Visibility.Collapsed;
+        InstallCpuGraphicsDriverCheck.IsEnabled = hasCpuGraphics;
     }
 
     private void UpdateMpoButtonText() => ToggleMpoButtonText.Text = _hardware?.IsMpoDisabled == true
@@ -662,12 +723,15 @@ public partial class MainWindow : Window
     {
         _applyingSettings = true;
         InstallDisplayDriverCheck.IsChecked = _settings.InstallGpuDriver;
+        InstallCpuGraphicsDriverCheck.IsChecked = _settings.InstallCpuGraphicsDriver;
         AdrenalinCheck.IsChecked = _settings.InstallAdrenalin;
         AudioCheck.IsChecked = _settings.InstallAudioDriver;
         AutoClearDownloadCacheCheck.IsChecked = _settings.AutoClearDownloadedCache;
         _applyingSettings = false;
         InstallDisplayDriverCheck.Checked += (_, _) => SaveSettings();
         InstallDisplayDriverCheck.Unchecked += (_, _) => SaveSettings();
+        InstallCpuGraphicsDriverCheck.Checked += (_, _) => SaveSettings();
+        InstallCpuGraphicsDriverCheck.Unchecked += (_, _) => SaveSettings();
         AdrenalinCheck.Checked += (_, _) => SaveSettings();
         AdrenalinCheck.Unchecked += (_, _) => SaveSettings();
         AudioCheck.Checked += (_, _) => SaveSettings();
@@ -684,6 +748,7 @@ public partial class MainWindow : Window
         }
 
         _settings.InstallGpuDriver = InstallDisplayDriverCheck.IsChecked == true;
+        _settings.InstallCpuGraphicsDriver = InstallCpuGraphicsDriverCheck.IsChecked == true;
         _settings.InstallAdrenalin = AdrenalinCheck.IsChecked == true;
         _settings.InstallAudioDriver = AudioCheck.IsChecked == true;
         _settings.AutoClearDownloadedCache = AutoClearDownloadCacheCheck.IsChecked == true;
