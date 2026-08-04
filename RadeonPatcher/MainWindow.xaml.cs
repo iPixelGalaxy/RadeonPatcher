@@ -98,12 +98,13 @@ public partial class MainWindow : Window
                 : _hardware.AudioDriverVersion is null
                 ? "Installed AMD HD Audio Driver: None"
                 : $"Installed AMD HD Audio Driver: {_hardware.AudioDriverVersion}";
+            var cpuName = _hardware.CpuName?.Trim() ?? "AMD processor";
             CpuGraphicsText.Text = _hardware.CpuGraphicsAdapter is { } cpuGraphics
                 ? cpuGraphics.UsesBasicDisplayDriver
-                    ? "CPU Graphics: AMD CPU Graphics. Status: Enabled, using Microsoft Basic Display Adapter."
-                    : $"CPU Graphics: {cpuGraphics.Name ?? "AMD CPU Graphics"}. Status: Enabled ({cpuGraphics.PackageVersion ?? cpuGraphics.DriverVersion ?? "AMD driver not installed"})."
+                    ? $"CPU Graphics: {cpuName}. Status: Enabled, using Microsoft Basic Display Adapter."
+                    : $"CPU Graphics: {cpuName}. Status: Enabled ({cpuGraphics.PackageVersion ?? cpuGraphics.DriverVersion ?? "AMD driver not installed"})."
                 : !string.IsNullOrWhiteSpace(_hardware.CpuSupportUrl)
-                    ? $"CPU Graphics: {_hardware.CpuName?.Trim() ?? "AMD processor"}. Status: Disabled in firmware."
+                    ? $"CPU Graphics: {cpuName}. Status: Disabled in firmware."
                     : "";
 
             var savedCustomUrl = _settings.CustomSupportUrl;
@@ -111,17 +112,21 @@ public partial class MainWindow : Window
                 ? _workflow.ResolveSupportUrl(_hardware) ?? ""
                 : savedCustomUrl;
             SupportUrlBox.Text = supportUrl;
-            var cpuSupportUrl = string.IsNullOrWhiteSpace(_settings.CustomCpuSupportUrl)
-                ? _hardware.CpuSupportUrl ?? ""
-                : _settings.CustomCpuSupportUrl;
-            CpuSupportUrlBox.Text = cpuSupportUrl;
             var hasCpuGraphics = _hardware.CpuGraphicsAdapter is not null;
+            var cpuGraphicsNeedsSeparatePackage = hasCpuGraphics &&
+                !string.Equals(_hardware.CpuGraphicsAdapter!.InstanceId, _hardware.GpuInstanceId, StringComparison.OrdinalIgnoreCase);
+            var hasMappedCpuSupportUrl = !string.IsNullOrWhiteSpace(_hardware.CpuSupportUrl);
+            var cpuSupportUrl = hasMappedCpuSupportUrl
+                ? _hardware.CpuSupportUrl!
+                : _settings.CustomCpuSupportUrl ?? "";
+            CpuSupportUrlBox.Text = cpuSupportUrl;
             var needsCustomUrl = !string.IsNullOrWhiteSpace(savedCustomUrl) || string.IsNullOrWhiteSpace(supportUrl);
-            DriverSourcePanel.Visibility = needsCustomUrl || hasCpuGraphics ? Visibility.Visible : Visibility.Collapsed;
+            var needsCpuCustomUrl = cpuGraphicsNeedsSeparatePackage && !hasMappedCpuSupportUrl;
+            DriverSourcePanel.Visibility = needsCustomUrl || needsCpuCustomUrl ? Visibility.Visible : Visibility.Collapsed;
             CustomUrlCheck.Visibility = needsCustomUrl ? Visibility.Visible : Visibility.Collapsed;
             CustomUrlCheck.IsChecked = needsCustomUrl;
             CustomUrlPanel.Visibility = needsCustomUrl ? Visibility.Visible : Visibility.Collapsed;
-            CpuSupportUrlPanel.Visibility = hasCpuGraphics ? Visibility.Visible : Visibility.Collapsed;
+            CpuSupportUrlPanel.Visibility = needsCpuCustomUrl ? Visibility.Visible : Visibility.Collapsed;
             SourceSummaryText.Text = needsCustomUrl
                 ? "No mapped AMD support page was found. Enter a custom AMD support URL."
                 : $"Using detected AMD support page for {_hardware.GpuName}.";
@@ -683,7 +688,10 @@ public partial class MainWindow : Window
         _settings.InstallAudioDriver = AudioCheck.IsChecked == true;
         _settings.AutoClearDownloadedCache = AutoClearDownloadCacheCheck.IsChecked == true;
         _settings.CustomSupportUrl = CustomUrlCheck.IsChecked == true ? SupportUrlBox.Text.Trim() : null;
-        _settings.CustomCpuSupportUrl = CpuSupportUrlBox.Text.Trim();
+        if (_hardware?.CpuGraphicsAdapter is not null && string.IsNullOrWhiteSpace(_hardware.CpuSupportUrl))
+        {
+            _settings.CustomCpuSupportUrl = CpuSupportUrlBox.Text.Trim();
+        }
         var currentSettings = UserSettingsStore.Load();
         _settings.IgnoredAppUpdateVersion = currentSettings.IgnoredAppUpdateVersion;
         UserSettingsStore.Save(_settings);
