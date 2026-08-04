@@ -122,7 +122,7 @@ public sealed class DriverWorkflow : IDisposable
     public async Task<HardwareInfo> GetHardwareInfoAsync()
     {
         var display = await RunPowerShellAsync("""
-            $gpus = @(Get-CimInstance Win32_PnPEntity |
+            $amdDevices = @(Get-CimInstance Win32_PnPEntity |
               Where-Object {
                 $_.PNPDeviceID -match 'VEN_1002' -and
                 (
@@ -132,6 +132,10 @@ public sealed class DriverWorkflow : IDisposable
                 )
               } |
               Sort-Object @{ Expression = { if ($_.PNPClass -eq 'Display') { 0 } else { 1 } } }, Name)
+            $gpus = @($amdDevices | Where-Object { $_.PNPClass -eq 'Display' })
+            if ($gpus.Count -eq 0) {
+              $gpus = @($amdDevices | Where-Object { $_.Name -match 'Radeon|AMD|Microsoft Basic Display|Display|Video' -or $_.Service -match 'BasicDisplay|amdwddmg|amdkmdag' })
+            }
             $signedDrivers = Get-CimInstance Win32_PnPSignedDriver
             $aud = $signedDrivers | Where-Object { $_.DeviceClass -eq 'MEDIA' -and ($_.DeviceID -match 'HDAUDIO\\FUNC_01&VEN_1002&DEV_AA01' -or $_.DeviceName -match 'AMD High Definition Audio') } | Select-Object -First 1
             $hasAmdAudioDriver = $aud -and $aud.DriverProviderName -match 'AMD|Advanced Micro Devices' -and $aud.InfName -notmatch '^hdaudio\.inf$'
@@ -151,7 +155,7 @@ public sealed class DriverWorkflow : IDisposable
                 OriginalInf=$originalInf
               }
             }
-            $primary = $adapters | Sort-Object @{ Expression = { if ($_.Name -match 'Radeon\\s+RX|Radeon\\s+PRO') { 0 } else { 1 } } }, Name | Select-Object -First 1
+            $primary = $adapters | Sort-Object @{ Expression = { if ($_.Name -match 'Radeon\s+RX|Radeon\s+PRO') { 0 } else { 1 } } }, Name | Select-Object -First 1
             $os = Get-CimInstance Win32_OperatingSystem
             $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
             $windowsVersion = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction SilentlyContinue
