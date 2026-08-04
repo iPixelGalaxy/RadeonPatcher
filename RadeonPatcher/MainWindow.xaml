@@ -1,10 +1,12 @@
 <Window x:Class="RadeonPatcher.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:RadeonPatcher"
         Title="RadeonPatcher" Height="760" Width="1050" MinHeight="680" MinWidth="1050"
         Icon="Resources/AMDSoftwareConsumer.ico"
         Background="{DynamicResource WindowBackgroundBrush}">
     <Window.Resources>
+        <local:ProgressIndicatorWidthConverter x:Key="ProgressIndicatorWidthConverter"/>
         <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#F3F5F7"/>
         <SolidColorBrush x:Key="PanelBackgroundBrush" Color="#FFFFFF"/>
         <SolidColorBrush x:Key="PanelBorderBrush" Color="#D7DEE7"/>
@@ -125,8 +127,17 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="ProgressBar">
                         <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="4" Padding="2">
-                            <Grid ClipToBounds="True">
-                                <Border x:Name="Indicator" Width="42" HorizontalAlignment="Left" Background="{TemplateBinding Foreground}" CornerRadius="2">
+                            <Grid x:Name="IndicatorHost" ClipToBounds="True">
+                                <Border x:Name="Indicator" HorizontalAlignment="Left" Background="{TemplateBinding Foreground}" CornerRadius="2">
+                                    <Border.Width>
+                                        <MultiBinding Converter="{StaticResource ProgressIndicatorWidthConverter}">
+                                            <Binding Path="Value" RelativeSource="{RelativeSource TemplatedParent}"/>
+                                            <Binding Path="Minimum" RelativeSource="{RelativeSource TemplatedParent}"/>
+                                            <Binding Path="Maximum" RelativeSource="{RelativeSource TemplatedParent}"/>
+                                            <Binding ElementName="IndicatorHost" Path="ActualWidth"/>
+                                            <Binding Path="IsIndeterminate" RelativeSource="{RelativeSource TemplatedParent}"/>
+                                        </MultiBinding>
+                                    </Border.Width>
                                     <Border.RenderTransform>
                                         <TranslateTransform x:Name="IndicatorTransform"/>
                                     </Border.RenderTransform>
@@ -566,10 +577,14 @@
                              TextWrapping="NoWrap" Background="{DynamicResource LogBackgroundBrush}" Foreground="{DynamicResource LogForegroundBrush}"
                              Style="{StaticResource LogTextBoxStyle}"/>
                     <StackPanel x:Name="DownloadProgressPanel" Grid.Row="2" Margin="0,12,0,0" Visibility="Collapsed">
-                        <DockPanel Margin="0,0,0,6">
-                            <TextBlock x:Name="DownloadStatusText" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="NoWrap"/>
-                            <TextBlock x:Name="DownloadSpeedText" DockPanel.Dock="Right" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="NoWrap"/>
-                        </DockPanel>
+                        <Grid Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock x:Name="DownloadStatusText" Grid.Column="0" Margin="0,0,14,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock x:Name="DownloadSpeedText" Grid.Column="1" HorizontalAlignment="Right" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="NoWrap"/>
+                        </Grid>
                         <ProgressBar x:Name="DriverDownloadProgressBar" Height="14" Minimum="0" Maximum="100" Style="{StaticResource AppProgressBar}"/>
                     </StackPanel>
                 </Grid>
