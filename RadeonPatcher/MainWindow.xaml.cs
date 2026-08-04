@@ -76,8 +76,16 @@ public partial class MainWindow : Window
                 : _hardware.AudioDriverVersion is not null;
             _canUninstallAdrenalin = _hardware.IsAdrenalinInstalled;
 
-            GpuText.Text = _hardware.GpuName ?? "No AMD display adapter detected.";
-            DisplayDriverText.Text = displayForced
+            var primaryDisplay = _hardware.PrimaryDisplayAdapter;
+            GpuText.Text = primaryDisplay is null
+                ? "No physical display adapter detected."
+                : $"Primary Display: {primaryDisplay.Name ?? "Unknown display adapter"}";
+            DisplayDriverText.Text = primaryDisplay is not null &&
+                                     !string.Equals(primaryDisplay.InstanceId, _hardware.GpuInstanceId, StringComparison.OrdinalIgnoreCase)
+                ? primaryDisplay.UsesBasicDisplayDriver
+                    ? "Primary Display Driver: Microsoft Basic Display Adapter"
+                    : $"Primary Display Driver: {primaryDisplay.DriverProviderName ?? "Unknown"} {primaryDisplay.DriverVersion ?? "driver unknown"}"
+                : displayForced
                 ? $"Installed Video Driver: {_settings.LastInstalledDisplayPackageVersion ?? "None"}"
                 : _hardware.DisplayDriverPackageVersion is null
                 ? _hardware.DisplayDriverVersion is null
@@ -90,8 +98,10 @@ public partial class MainWindow : Window
                 : _hardware.AudioDriverVersion is null
                 ? "Installed AMD HD Audio Driver: None"
                 : $"Installed AMD HD Audio Driver: {_hardware.AudioDriverVersion}";
-            CpuGraphicsText.Text = _hardware.CpuGraphicsAdapter is not null
-                ? $"CPU Graphics: {_hardware.CpuGraphicsAdapter.Name ?? "AMD Radeon Graphics"} ({_hardware.CpuGraphicsAdapter.PackageVersion ?? _hardware.CpuGraphicsAdapter.DriverVersion ?? "driver unknown"})"
+            CpuGraphicsText.Text = _hardware.CpuGraphicsAdapter is { } cpuGraphics
+                ? cpuGraphics.UsesBasicDisplayDriver
+                    ? "CPU Graphics: AMD CPU Graphics. Status: Enabled, using Microsoft Basic Display Adapter."
+                    : $"CPU Graphics: {cpuGraphics.Name ?? "AMD CPU Graphics"}. Status: Enabled ({cpuGraphics.PackageVersion ?? cpuGraphics.DriverVersion ?? "AMD driver not installed"})."
                 : !string.IsNullOrWhiteSpace(_hardware.CpuSupportUrl)
                     ? $"CPU Graphics: {_hardware.CpuName?.Trim() ?? "AMD processor"}. Status: Disabled in firmware."
                     : "";

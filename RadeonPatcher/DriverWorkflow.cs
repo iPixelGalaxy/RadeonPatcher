@@ -28,14 +28,18 @@ public sealed record HardwareInfo(
     IReadOnlyList<DisplayAdapterInfo>? DisplayAdapters = null,
     DisplayAdapterInfo? CpuGraphicsAdapter = null,
     string? CpuName = null,
-    string? CpuSupportUrl = null);
+    string? CpuSupportUrl = null,
+    DisplayAdapterInfo? PrimaryDisplayAdapter = null);
 
 public sealed record DisplayAdapterInfo(
     string? Name,
     string? InstanceId,
     string? DriverVersion,
     string? OriginalInf,
-    string? PackageVersion);
+    string? PackageVersion,
+    string? VendorId = null,
+    string? DriverProviderName = null,
+    bool UsesBasicDisplayDriver = false);
 
 public sealed record DriverRelease(
     string DisplayName,
@@ -122,26 +126,25 @@ public sealed class DriverWorkflow : IDisposable
     public async Task<HardwareInfo> GetHardwareInfoAsync()
     {
         var display = await RunPowerShellAsync("""
-            $amdDevices = @(Get-CimInstance Win32_PnPEntity |
+            $displayClassGuid = '{4d36e968-e325-11ce-bfc1-08002be10318}'
+            $gpus = @(Get-CimInstance Win32_PnPEntity |
               Where-Object {
-                $_.PNPDeviceID -match 'VEN_1002' -and
+                $_.PNPDeviceID -like 'PCI\VEN_*' -and
                 (
                   $_.PNPClass -eq 'Display' -or
-                  $_.Name -match 'Radeon|AMD|Microsoft Basic Display|Display|Video' -or
-                  $_.Service -match 'BasicDisplay|amdwddmg|amdkmdag'
+                  $_.ClassGuid -eq $displayClassGuid -or
+                  $_.Name -match 'Radeon|NVIDIA|GeForce|Microsoft Basic Display|Video Controller|Display Controller' -or
+                  $_.Service -match 'BasicDisplay|amdwddmg|amdkmdag|nvlddmkm'
                 )
               } |
-              Sort-Object @{ Expression = { if ($_.PNPClass -eq 'Display') { 0 } else { 1 } } }, Name)
-            $gpus = @($amdDevices | Where-Object { $_.PNPClass -eq 'Display' })
-            if ($gpus.Count -eq 0) {
-              $gpus = @($amdDevices | Where-Object { $_.Name -match 'Radeon|AMD|Microsoft Basic Display|Display|Video' -or $_.Service -match 'BasicDisplay|amdwddmg|amdkmdag' })
-            }
+              Sort-Object Name)
             $signedDrivers = Get-CimInstance Win32_PnPSignedDriver
             $aud = $signedDrivers | Where-Object { $_.DeviceClass -eq 'MEDIA' -and ($_.DeviceID -match 'HDAUDIO\\FUNC_01&VEN_1002&DEV_AA01' -or $_.DeviceName -match 'AMD High Definition Audio') } | Select-Object -First 1
             $hasAmdAudioDriver = $aud -and $aud.DriverProviderName -match 'AMD|Advanced Micro Devices' -and $aud.InfName -notmatch '^hdaudio\.inf$'
             $adapters = foreach ($gpu in $gpus) {
               $drv = $signedDrivers | Where-Object { $_.DeviceClass -eq 'DISPLAY' -and $_.DeviceID -eq $gpu.PNPDeviceID } | Sort-Object DriverDate -Descending | Select-Object -First 1
-              $hasAmdDisplayDriver = $drv -and $drv.DriverProviderName -match 'AMD|Advanced Micro Devices' -and $drv.InfName -notmatch '^display\.inf$'
+              $isAmd = $gpu.PNPDeviceID -like 'PCI\VEN_1002*'
+              $hasAmdDisplayDriver = $isAmd -and $drv -and $drv.DriverProviderName -match 'AMD|Advanced Micro Devices' -and $drv.InfName -notmatch '^display\.inf$'
               $originalInf = if ($hasAmdDisplayDriver) { $drv.InfName } else { $null }
               if ($hasAmdDisplayDriver -and $gpu.Service) {
                 $service = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\$($gpu.Service)" -ErrorAction SilentlyContinue
@@ -151,11 +154,12 @@ public sealed class DriverWorkflow : IDisposable
               [pscustomobject]@{
                 Name=$gpu.Name
                 InstanceId=$gpu.PNPDeviceID
-                DriverVersion=if ($hasAmdDisplayDriver) { $drv.DriverVersion } else { $null }
+                DriverVersion=$drv.DriverVersion
                 OriginalInf=$originalInf
+                DriverProviderName=$drv.DriverProviderName
+                UsesBasicDisplayDriver=($gpu.Service -match 'BasicDisplay' -or $gpu.Name -match 'Microsoft Basic Display' -or ($drv.DriverProviderName -match 'Microsoft' -and $drv.InfName -match '^display\.inf$'))
               }
             }
-            $primary = $adapters | Sort-Object @{ Expression = { if ($_.Name -match 'Radeon\s+RX|Radeon\s+PRO') { 0 } else { 1 } } }, Name | Select-Object -First 1
             $os = Get-CimInstance Win32_OperatingSystem
             $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
             $windowsVersion = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction SilentlyContinue
@@ -166,10 +170,10 @@ public sealed class DriverWorkflow : IDisposable
             $updateCheckInstalled = $null -ne (Get-ScheduledTask -TaskName 'RadeonPatcher Update Check' -ErrorAction SilentlyContinue)
             $adrenalinInstalled = Test-Path -LiteralPath 'C:\Program Files\AMD\CNext\CNext\RadeonSoftware.exe'
             [pscustomobject]@{
-              GpuName=$primary.Name
-              GpuInstanceId=$primary.InstanceId
-              DisplayDriverVersion=$primary.DriverVersion
-              DisplayDriverOriginalInf=$primary.OriginalInf
+              GpuName=$null
+              GpuInstanceId=$null
+              DisplayDriverVersion=$null
+              DisplayDriverOriginalInf=$null
               AudioDriverVersion=if ($hasAmdAudioDriver) { $aud.DriverVersion } else { $null }
               OsName=$osName
               OsVersion=$osBuild
@@ -188,25 +192,34 @@ public sealed class DriverWorkflow : IDisposable
         var adapters = (hardware.DisplayAdapters ?? [])
             .Select(adapter => adapter with
             {
-                Name = GpuModelDatabase.ResolveName(adapter.InstanceId, adapter.Name),
-                PackageVersion = ResolvePackageVersion(adapter.InstanceId, adapter.DriverVersion, adapter.OriginalInf)
+                VendorId = GetVendorId(adapter.InstanceId),
+                Name = IsAmdAdapter(adapter)
+                    ? GpuModelDatabase.ResolveName(adapter.InstanceId, adapter.Name)
+                    : adapter.Name?.Trim(),
+                PackageVersion = IsAmdAdapter(adapter)
+                    ? ResolvePackageVersion(adapter.InstanceId, adapter.DriverVersion, adapter.OriginalInf)
+                    : null
             })
             .ToList();
-        var primary = adapters.FirstOrDefault(adapter => string.Equals(adapter.InstanceId, hardware.GpuInstanceId, StringComparison.OrdinalIgnoreCase));
-        var cpuGraphics = IsCpuGraphicsAdapter(primary)
-            ? primary
-            : adapters.FirstOrDefault(adapter =>
-                !string.Equals(adapter.InstanceId, primary?.InstanceId, StringComparison.OrdinalIgnoreCase) &&
-                IsCpuGraphicsAdapter(adapter));
+        var cpuGraphics = adapters.FirstOrDefault(IsCpuGraphicsAdapter);
+        var amdTarget = adapters.FirstOrDefault(adapter => IsAmdAdapter(adapter) && !IsCpuGraphicsAdapter(adapter)) ?? cpuGraphics;
+        var primaryDisplay = adapters
+            .OrderBy(adapter => IsCpuGraphicsAdapter(adapter) ? 1 : 0)
+            .ThenBy(adapter => adapter.UsesBasicDisplayDriver ? 1 : 0)
+            .ThenBy(adapter => string.IsNullOrWhiteSpace(adapter.DriverVersion) ? 1 : 0)
+            .ThenBy(adapter => adapter.Name, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault();
         return hardware with
         {
-            GpuName = primary?.Name ?? GpuModelDatabase.ResolveName(hardware.GpuInstanceId, hardware.GpuName),
-            DisplayDriverVersion = primary?.DriverVersion ?? hardware.DisplayDriverVersion,
-            DisplayDriverOriginalInf = primary?.OriginalInf ?? hardware.DisplayDriverOriginalInf,
-            DisplayDriverPackageVersion = primary?.PackageVersion ?? ResolvePackageVersion(hardware),
+            GpuName = amdTarget?.Name,
+            GpuInstanceId = amdTarget?.InstanceId,
+            DisplayDriverVersion = amdTarget?.DriverVersion,
+            DisplayDriverOriginalInf = amdTarget?.OriginalInf,
+            DisplayDriverPackageVersion = amdTarget?.PackageVersion,
             DisplayAdapters = adapters,
             CpuGraphicsAdapter = cpuGraphics,
-            CpuSupportUrl = ResolveCpuSupportUrl(hardware.CpuName)
+            CpuSupportUrl = ResolveCpuSupportUrl(hardware.CpuName),
+            PrimaryDisplayAdapter = primaryDisplay
         };
     }
 
@@ -269,6 +282,15 @@ public sealed class DriverWorkflow : IDisposable
         return null;
     }
 
+    private static string? GetVendorId(string? instanceId)
+    {
+        var match = Regex.Match(instanceId ?? "", @"^PCI\\VEN_(?<vendor>[0-9A-F]{4})", RegexOptions.IgnoreCase);
+        return match.Success ? match.Groups["vendor"].Value : null;
+    }
+
+    private static bool IsAmdAdapter(DisplayAdapterInfo adapter) =>
+        string.Equals(adapter.VendorId ?? GetVendorId(adapter.InstanceId), "1002", StringComparison.OrdinalIgnoreCase);
+
     private static bool IsCpuGraphicsName(string? name) =>
         !string.IsNullOrWhiteSpace(name) &&
         name.Contains("Radeon", StringComparison.OrdinalIgnoreCase) &&
@@ -277,6 +299,7 @@ public sealed class DriverWorkflow : IDisposable
 
     private static bool IsCpuGraphicsAdapter(DisplayAdapterInfo? adapter) =>
         adapter is not null &&
+        IsAmdAdapter(adapter) &&
         (IsCpuGraphicsName(adapter.Name) ||
          Regex.IsMatch(adapter.InstanceId ?? "", @"PCI\\VEN_1002&DEV_(1114|15BF|15C8|164C|164D|164E|1900|1901|1902)", RegexOptions.IgnoreCase));
 
@@ -579,7 +602,10 @@ public sealed class DriverWorkflow : IDisposable
               & reg.exe export 'HKCU\Software\AMD' $userSettings /y | Out-Null
               if ($LASTEXITCODE -ne 0) { throw 'Could not export AMD user settings.' }
             }
-            $gpu = Get-CimInstance Win32_PnPEntity | Where-Object { $_.PNPDeviceID -match 'VEN_1002' -and $_.PNPClass -eq 'Display' } | Select-Object -First 1
+            $gpu = Get-CimInstance Win32_PnPEntity | Where-Object {
+              $_.PNPDeviceID -like 'PCI\VEN_1002*' -and
+              ($_.PNPClass -eq 'Display' -or $_.ClassGuid -eq '{4d36e968-e325-11ce-bfc1-08002be10318}' -or $_.Service -match 'BasicDisplay|amdwddmg|amdkmdag')
+            } | Sort-Object @{ Expression = { if ($_.PNPDeviceID -match 'DEV_(1114|15BF|15C8|164C|164D|164E|1900|1901|1902)') { 1 } else { 0 } } } | Select-Object -First 1
             $videoId = $null
             if ($gpu.Service) {
               $videoId = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\$($gpu.Service)\Video" -ErrorAction SilentlyContinue).VideoID
@@ -621,7 +647,10 @@ public sealed class DriverWorkflow : IDisposable
             if (-not (Test-Path $manifestPath)) { return }
             $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
             if (-not $manifest.VideoId -or -not $manifest.AdapterFiles) { return }
-            $gpu = Get-CimInstance Win32_PnPEntity | Where-Object { $_.PNPDeviceID -match 'VEN_1002' -and $_.PNPClass -eq 'Display' } | Select-Object -First 1
+            $gpu = Get-CimInstance Win32_PnPEntity | Where-Object {
+              $_.PNPDeviceID -like 'PCI\VEN_1002*' -and
+              ($_.PNPClass -eq 'Display' -or $_.ClassGuid -eq '{4d36e968-e325-11ce-bfc1-08002be10318}' -or $_.Service -match 'BasicDisplay|amdwddmg|amdkmdag')
+            } | Sort-Object @{ Expression = { if ($_.PNPDeviceID -match 'DEV_(1114|15BF|15C8|164C|164D|164E|1900|1901|1902)') { 1 } else { 0 } } } | Select-Object -First 1
             $newVideoId = $null
             if ($gpu.Service) {
               $newVideoId = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\$($gpu.Service)\Video" -ErrorAction SilentlyContinue).VideoID
