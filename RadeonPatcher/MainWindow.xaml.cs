@@ -286,7 +286,8 @@ public partial class MainWindow : Window
                         : AudioInstallSource.None,
                 AutoClearDownloadCacheCheck.IsChecked == true);
 
-            completedResult = await _workflow.InstallAsync(request, Log);
+            var downloadProgress = new Progress<DriverDownloadProgress>(UpdateDownloadProgress);
+            completedResult = await _workflow.InstallAsync(request, Log, downloadProgress);
             Log("Install workflow finished.");
             completedRequest = request;
             installed = true;
@@ -801,6 +802,7 @@ public partial class MainWindow : Window
     {
         Progress.Visibility = busy ? Visibility.Visible : Visibility.Hidden;
         Progress.IsIndeterminate = busy;
+        if (!busy) DownloadProgressPanel.Visibility = Visibility.Collapsed;
         RefreshButton.IsEnabled = !busy;
         ClearDownloadCacheButton.IsEnabled = !busy && _hasDownloadCache;
         ThemeCombo.IsEnabled = !busy;
@@ -815,6 +817,41 @@ public partial class MainWindow : Window
         InstallOptionsPanel.Visibility = Visibility.Visible;
         InstallOptionsPanel.IsEnabled = !busy;
     }
+
+    private void UpdateDownloadProgress(DriverDownloadProgress progress)
+    {
+        if (progress.IsComplete)
+        {
+            DownloadProgressPanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        DownloadProgressPanel.Visibility = Visibility.Visible;
+        DriverDownloadProgressBar.IsIndeterminate = progress.TotalBytes is null;
+        if (progress.TotalBytes is > 0)
+        {
+            var percentage = Math.Clamp(progress.DownloadedBytes * 100d / progress.TotalBytes.Value, 0, 100);
+            DriverDownloadProgressBar.Value = percentage;
+            DownloadStatusText.Text = $"Downloading {progress.FileName}: {FormatMegabytes(progress.DownloadedBytes)} / {FormatMegabytes(progress.TotalBytes.Value)} ({percentage:0}%)";
+        }
+        else
+        {
+            DownloadStatusText.Text = $"Downloading {progress.FileName}: {FormatMegabytes(progress.DownloadedBytes)}";
+        }
+
+        var speedText = progress.BytesPerSecond is > 0
+            ? $"{progress.BytesPerSecond.Value / 1024d / 1024d:F1} MB/s"
+            : "Calculating speed...";
+        DownloadSpeedText.Text = progress.EstimatedRemaining is { } remaining
+            ? $"{speedText} · {FormatRemaining(remaining)} remaining"
+            : speedText;
+    }
+
+    private static string FormatMegabytes(long bytes) => $"{bytes / 1024d / 1024d:F1} MB";
+
+    private static string FormatRemaining(TimeSpan remaining) => remaining.TotalHours >= 1
+        ? $"{(int)remaining.TotalHours}:{remaining:mm\\:ss}"
+        : $"{(int)remaining.TotalMinutes:00}:{remaining.Seconds:00}";
 
     private void Log(string message)
     {

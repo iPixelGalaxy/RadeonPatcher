@@ -556,6 +556,7 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                     <DockPanel Margin="0,0,0,10">
                         <TextBlock DockPanel.Dock="Left" FontWeight="SemiBold" Text="Log"/>
@@ -564,6 +565,13 @@
                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                              TextWrapping="NoWrap" Background="{DynamicResource LogBackgroundBrush}" Foreground="{DynamicResource LogForegroundBrush}"
                              Style="{StaticResource LogTextBoxStyle}"/>
+                    <StackPanel x:Name="DownloadProgressPanel" Grid.Row="2" Margin="0,12,0,0" Visibility="Collapsed">
+                        <DockPanel Margin="0,0,0,6">
+                            <TextBlock x:Name="DownloadStatusText" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="NoWrap"/>
+                            <TextBlock x:Name="DownloadSpeedText" DockPanel.Dock="Right" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="NoWrap"/>
+                        </DockPanel>
+                        <ProgressBar x:Name="DriverDownloadProgressBar" Height="14" Minimum="0" Maximum="100" Style="{StaticResource AppProgressBar}"/>
+                    </StackPanel>
                 </Grid>
             </Border>
         </Grid>

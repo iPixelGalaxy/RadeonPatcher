@@ -50,6 +50,14 @@ public sealed record DriverRelease(
     string DownloadUrl,
     string SupportUrl);
 
+public sealed record DriverDownloadProgress(
+    string FileName,
+    long DownloadedBytes,
+    long? TotalBytes,
+    double? BytesPerSecond,
+    TimeSpan? EstimatedRemaining,
+    bool IsComplete = false);
+
 public sealed record DriverSelection(DriverRelease Primary, DriverRelease? CpuGraphics)
 {
     public string DisplayName => Primary.DisplayName;
@@ -355,7 +363,10 @@ public sealed class DriverWorkflow : IDisposable
         return result;
     }
 
-    public async Task<InstallResult> InstallAsync(InstallRequest request, Action<string> log)
+    public async Task<InstallResult> InstallAsync(
+        InstallRequest request,
+        Action<string> log,
+        IProgress<DriverDownloadProgress>? downloadProgress = null)
     {
         string? primaryGpuPackageVersion = null;
         string? cpuGraphicsPackageVersion = null;
@@ -371,14 +382,14 @@ public sealed class DriverWorkflow : IDisposable
             string? packageRoot = null;
             if (needsPrimaryPackage)
             {
-                var packageExe = await DownloadDriverAsync(request.Driver.Primary, false, log);
+                var packageExe = await DownloadDriverAsync(request.Driver.Primary, false, log, downloadProgress);
                 packageRoot = await ExtractPackageAsync(packageExe, log);
             }
             string? cpuPackageRoot = null;
             if (request.InstallCpuGraphicsDriver && !cpuGraphicsIsPrimaryTarget && request.Driver.CpuGraphics is not null && request.Hardware.CpuGraphicsAdapter is not null)
             {
                 log($"Downloading CPU graphics package for {request.Driver.CpuGraphics.VersionText}.");
-                var cpuPackageExe = await DownloadDriverAsync(request.Driver.CpuGraphics, false, log);
+                var cpuPackageExe = await DownloadDriverAsync(request.Driver.CpuGraphics, false, log, downloadProgress);
                 cpuPackageRoot = await ExtractPackageAsync(cpuPackageExe, log);
             }
 
@@ -807,7 +818,11 @@ public sealed class DriverWorkflow : IDisposable
         return minutes == 1 ? "1 minute" : $"{minutes} minutes";
     }
 
-    private async Task<string> DownloadDriverAsync(DriverRelease driver, bool force, Action<string> log)
+    private async Task<string> DownloadDriverAsync(
+        DriverRelease driver,
+        bool force,
+        Action<string> log,
+        IProgress<DriverDownloadProgress>? progress = null)
     {
         Directory.CreateDirectory(DownloadsRoot);
         var destination = Path.Combine(DownloadsRoot, Path.GetFileName(new Uri(driver.DownloadUrl).AbsolutePath));
@@ -832,11 +847,38 @@ public sealed class DriverWorkflow : IDisposable
         response.EnsureSuccessStatusCode();
         await using var source = await response.Content.ReadAsStreamAsync();
         var temporaryDestination = destination + ".partial";
+        var fileName = Path.GetFileName(destination);
+        var totalBytes = response.Content.Headers.ContentLength is > 0 ? response.Content.Headers.ContentLength : null;
+        var downloadedBytes = 0L;
+        double? bytesPerSecond = null;
+        var stopwatch = Stopwatch.StartNew();
+        var lastReportAt = TimeSpan.Zero;
+        var lastReportBytes = 0L;
+        var progressStarted = false;
         try
         {
+            progress?.Report(CreateDownloadProgress(fileName, downloadedBytes, totalBytes, bytesPerSecond));
+            progressStarted = true;
             await using (var target = File.Create(temporaryDestination))
             {
-                await source.CopyToAsync(target);
+                var buffer = new byte[81920];
+                int bytesRead;
+                while ((bytesRead = await source.ReadAsync(buffer.AsMemory(0, buffer.Length))) > 0)
+                {
+                    await target.WriteAsync(buffer.AsMemory(0, bytesRead));
+                    downloadedBytes += bytesRead;
+
+                    var elapsedSinceReport = stopwatch.Elapsed - lastReportAt;
+                    if (elapsedSinceReport < TimeSpan.FromMilliseconds(250)) continue;
+
+                    var instantaneousSpeed = (downloadedBytes - lastReportBytes) / elapsedSinceReport.TotalSeconds;
+                    bytesPerSecond = bytesPerSecond is null
+                        ? instantaneousSpeed
+                        : (bytesPerSecond.Value * 0.75) + (instantaneousSpeed * 0.25);
+                    progress?.Report(CreateDownloadProgress(fileName, downloadedBytes, totalBytes, bytesPerSecond));
+                    lastReportAt = stopwatch.Elapsed;
+                    lastReportBytes = downloadedBytes;
+                }
             }
 
             if (new FileInfo(temporaryDestination).Length < 50 * 1024 * 1024)
@@ -849,8 +891,23 @@ public sealed class DriverWorkflow : IDisposable
         }
         finally
         {
+            if (progressStarted)
+                progress?.Report(CreateDownloadProgress(fileName, downloadedBytes, totalBytes, bytesPerSecond) with { IsComplete = true });
             if (File.Exists(temporaryDestination)) File.Delete(temporaryDestination);
         }
+    }
+
+    private static DriverDownloadProgress CreateDownloadProgress(
+        string fileName,
+        long downloadedBytes,
+        long? totalBytes,
+        double? bytesPerSecond)
+    {
+        TimeSpan? estimatedRemaining = null;
+        if (totalBytes is > 0 && downloadedBytes < totalBytes && bytesPerSecond is > 0)
+            estimatedRemaining = TimeSpan.FromSeconds((totalBytes.Value - downloadedBytes) / bytesPerSecond.Value);
+
+        return new DriverDownloadProgress(fileName, downloadedBytes, totalBytes, bytesPerSecond, estimatedRemaining);
     }
 
     private async Task<string> ExtractPackageAsync(string packageExe, Action<string> log)
