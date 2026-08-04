@@ -301,7 +301,7 @@ public sealed class DriverWorkflow : IDisposable
         adapter is not null &&
         IsAmdAdapter(adapter) &&
         (IsCpuGraphicsName(adapter.Name) ||
-         Regex.IsMatch(adapter.InstanceId ?? "", @"PCI\\VEN_1002&DEV_(1114|15BF|15C8|164C|164D|164E|1900|1901|1902)", RegexOptions.IgnoreCase));
+         Regex.IsMatch(adapter.InstanceId ?? "", @"PCI\\VEN_1002&DEV_(1114|13C0|15BF|15C8|164C|164D|164E|1900|1901|1902)", RegexOptions.IgnoreCase));
 
     public async Task<IReadOnlyList<DriverRelease>> GetAvailableDriversAsync(string supportUrl, Action<string> log, bool forceRefresh = false)
     {
@@ -605,7 +605,7 @@ public sealed class DriverWorkflow : IDisposable
             $gpu = Get-CimInstance Win32_PnPEntity | Where-Object {
               $_.PNPDeviceID -like 'PCI\VEN_1002*' -and
               ($_.PNPClass -eq 'Display' -or $_.ClassGuid -eq '{4d36e968-e325-11ce-bfc1-08002be10318}' -or $_.Service -match 'BasicDisplay|amdwddmg|amdkmdag')
-            } | Sort-Object @{ Expression = { if ($_.PNPDeviceID -match 'DEV_(1114|15BF|15C8|164C|164D|164E|1900|1901|1902)') { 1 } else { 0 } } } | Select-Object -First 1
+            } | Sort-Object @{ Expression = { if ($_.PNPDeviceID -match 'DEV_(1114|13C0|15BF|15C8|164C|164D|164E|1900|1901|1902)') { 1 } else { 0 } } } | Select-Object -First 1
             $videoId = $null
             if ($gpu.Service) {
               $videoId = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\$($gpu.Service)\Video" -ErrorAction SilentlyContinue).VideoID
@@ -650,7 +650,7 @@ public sealed class DriverWorkflow : IDisposable
             $gpu = Get-CimInstance Win32_PnPEntity | Where-Object {
               $_.PNPDeviceID -like 'PCI\VEN_1002*' -and
               ($_.PNPClass -eq 'Display' -or $_.ClassGuid -eq '{4d36e968-e325-11ce-bfc1-08002be10318}' -or $_.Service -match 'BasicDisplay|amdwddmg|amdkmdag')
-            } | Sort-Object @{ Expression = { if ($_.PNPDeviceID -match 'DEV_(1114|15BF|15C8|164C|164D|164E|1900|1901|1902)') { 1 } else { 0 } } } | Select-Object -First 1
+            } | Sort-Object @{ Expression = { if ($_.PNPDeviceID -match 'DEV_(1114|13C0|15BF|15C8|164C|164D|164E|1900|1901|1902)') { 1 } else { 0 } } } | Select-Object -First 1
             $newVideoId = $null
             if ($gpu.Service) {
               $newVideoId = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\$($gpu.Service)\Video" -ErrorAction SilentlyContinue).VideoID
