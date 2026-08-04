@@ -24,7 +24,18 @@ public sealed record HardwareInfo(
     bool IsServer,
     bool IsMpoDisabled,
     bool IsUpdateCheckServiceInstalled,
-    bool IsAdrenalinInstalled);
+    bool IsAdrenalinInstalled,
+    IReadOnlyList<DisplayAdapterInfo>? DisplayAdapters = null,
+    DisplayAdapterInfo? CpuGraphicsAdapter = null,
+    string? CpuName = null,
+    string? CpuSupportUrl = null);
+
+public sealed record DisplayAdapterInfo(
+    string? Name,
+    string? InstanceId,
+    string? DriverVersion,
+    string? OriginalInf,
+    string? PackageVersion);
 
 public sealed record DriverRelease(
     string DisplayName,
@@ -33,6 +44,14 @@ public sealed record DriverRelease(
     string FileSizeText,
     string DownloadUrl,
     string SupportUrl);
+
+public sealed record DriverSelection(DriverRelease Primary, DriverRelease? CpuGraphics)
+{
+    public string DisplayName => Primary.DisplayName;
+    public string VersionText => Primary.VersionText;
+    public string ReleaseDateText => Primary.ReleaseDateText;
+    public string FileSizeText => Primary.FileSizeText;
+}
 
 public enum AudioInstallSource
 {
@@ -43,7 +62,7 @@ public enum AudioInstallSource
 
 public sealed record InstallRequest(
     HardwareInfo Hardware,
-    DriverRelease? Driver,
+    DriverSelection? Driver,
     string SupportUrl,
     bool InstallDisplayDriver,
     bool EnableServerCompatibility,
@@ -103,7 +122,7 @@ public sealed class DriverWorkflow : IDisposable
     public async Task<HardwareInfo> GetHardwareInfoAsync()
     {
         var display = await RunPowerShellAsync("""
-            $gpu = Get-CimInstance Win32_PnPEntity |
+            $gpus = @(Get-CimInstance Win32_PnPEntity |
               Where-Object {
                 $_.PNPDeviceID -match 'VEN_1002' -and
                 (
@@ -112,14 +131,29 @@ public sealed class DriverWorkflow : IDisposable
                   $_.Service -match 'BasicDisplay|amdwddmg|amdkmdag'
                 )
               } |
-              Sort-Object @{ Expression = { if ($_.PNPClass -eq 'Display') { 0 } else { 1 } } }, Name |
-              Select-Object -First 1
+              Sort-Object @{ Expression = { if ($_.PNPClass -eq 'Display') { 0 } else { 1 } } }, Name)
             $signedDrivers = Get-CimInstance Win32_PnPSignedDriver
-            $drv = $signedDrivers | Where-Object { $_.DeviceClass -eq 'DISPLAY' -and ($_.DeviceID -match 'VEN_1002' -or $_.DeviceName -match 'AMD|Radeon') } | Select-Object -First 1
             $aud = $signedDrivers | Where-Object { $_.DeviceClass -eq 'MEDIA' -and ($_.DeviceID -match 'HDAUDIO\\FUNC_01&VEN_1002&DEV_AA01' -or $_.DeviceName -match 'AMD High Definition Audio') } | Select-Object -First 1
-            $hasAmdDisplayDriver = $drv -and $drv.DriverProviderName -match 'AMD|Advanced Micro Devices' -and $drv.InfName -notmatch '^display\.inf$'
             $hasAmdAudioDriver = $aud -and $aud.DriverProviderName -match 'AMD|Advanced Micro Devices' -and $aud.InfName -notmatch '^hdaudio\.inf$'
+            $adapters = foreach ($gpu in $gpus) {
+              $drv = $signedDrivers | Where-Object { $_.DeviceClass -eq 'DISPLAY' -and $_.DeviceID -eq $gpu.PNPDeviceID } | Sort-Object DriverDate -Descending | Select-Object -First 1
+              $hasAmdDisplayDriver = $drv -and $drv.DriverProviderName -match 'AMD|Advanced Micro Devices' -and $drv.InfName -notmatch '^display\.inf$'
+              $originalInf = if ($hasAmdDisplayDriver) { $drv.InfName } else { $null }
+              if ($hasAmdDisplayDriver -and $gpu.Service) {
+                $service = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\$($gpu.Service)" -ErrorAction SilentlyContinue
+                $match = [regex]::Match([string]$service.ImagePath, '\\(?<inf>[^\\]+\.inf)_amd64_', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+                if ($match.Success) { $originalInf = $match.Groups['inf'].Value }
+              }
+              [pscustomobject]@{
+                Name=$gpu.Name
+                InstanceId=$gpu.PNPDeviceID
+                DriverVersion=if ($hasAmdDisplayDriver) { $drv.DriverVersion } else { $null }
+                OriginalInf=$originalInf
+              }
+            }
+            $primary = $adapters | Sort-Object @{ Expression = { if ($_.Name -match 'Radeon\\s+RX|Radeon\\s+PRO') { 0 } else { 1 } } }, Name | Select-Object -First 1
             $os = Get-CimInstance Win32_OperatingSystem
+            $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
             $windowsVersion = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction SilentlyContinue
             $osName = ($os.Caption -replace '^Microsoft\s+', '')
             $osBuild = if ($windowsVersion.CurrentBuildNumber -and $null -ne $windowsVersion.UBR) { "$($windowsVersion.CurrentBuildNumber).$($windowsVersion.UBR)" } else { $os.Version }
@@ -127,17 +161,11 @@ public sealed class DriverWorkflow : IDisposable
             try { $mpoDisabled = ((Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\Dwm' -ErrorAction SilentlyContinue).OverlayTestMode -eq 5) } catch {}
             $updateCheckInstalled = $null -ne (Get-ScheduledTask -TaskName 'RadeonPatcher Update Check' -ErrorAction SilentlyContinue)
             $adrenalinInstalled = Test-Path -LiteralPath 'C:\Program Files\AMD\CNext\CNext\RadeonSoftware.exe'
-            $originalInf = if ($hasAmdDisplayDriver) { $drv.InfName } else { $null }
-            if ($hasAmdDisplayDriver -and $gpu.Service) {
-              $service = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\$($gpu.Service)" -ErrorAction SilentlyContinue
-              $match = [regex]::Match([string]$service.ImagePath, '\\(?<inf>[^\\]+\.inf)_amd64_', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-              if ($match.Success) { $originalInf = $match.Groups['inf'].Value }
-            }
             [pscustomobject]@{
-              GpuName=$gpu.Name
-              GpuInstanceId=$gpu.PNPDeviceID
-              DisplayDriverVersion=if ($hasAmdDisplayDriver) { $drv.DriverVersion } else { $null }
-              DisplayDriverOriginalInf=$originalInf
+              GpuName=$primary.Name
+              GpuInstanceId=$primary.InstanceId
+              DisplayDriverVersion=$primary.DriverVersion
+              DisplayDriverOriginalInf=$primary.OriginalInf
               AudioDriverVersion=if ($hasAmdAudioDriver) { $aud.DriverVersion } else { $null }
               OsName=$osName
               OsVersion=$osBuild
@@ -145,16 +173,36 @@ public sealed class DriverWorkflow : IDisposable
               IsMpoDisabled=$mpoDisabled
               IsUpdateCheckServiceInstalled=$updateCheckInstalled
               IsAdrenalinInstalled=$adrenalinInstalled
+              DisplayAdapters=@($adapters)
+              CpuName=$cpu.Name
             } | ConvertTo-Json -Compress
             """);
         var hardware = JsonSerializer.Deserialize<HardwareInfo>(display.Trim(), new JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = true
         }) ?? throw new InvalidOperationException("PowerShell returned invalid hardware information.");
+        var adapters = (hardware.DisplayAdapters ?? [])
+            .Select(adapter => adapter with
+            {
+                Name = GpuModelDatabase.ResolveName(adapter.InstanceId, adapter.Name),
+                PackageVersion = ResolvePackageVersion(adapter.InstanceId, adapter.DriverVersion, adapter.OriginalInf)
+            })
+            .ToList();
+        var primary = adapters.FirstOrDefault(adapter => string.Equals(adapter.InstanceId, hardware.GpuInstanceId, StringComparison.OrdinalIgnoreCase));
+        var cpuGraphics = IsCpuGraphicsAdapter(primary)
+            ? primary
+            : adapters.FirstOrDefault(adapter =>
+                !string.Equals(adapter.InstanceId, primary?.InstanceId, StringComparison.OrdinalIgnoreCase) &&
+                IsCpuGraphicsAdapter(adapter));
         return hardware with
         {
-            GpuName = GpuModelDatabase.ResolveName(hardware.GpuInstanceId, hardware.GpuName),
-            DisplayDriverPackageVersion = ResolvePackageVersion(hardware)
+            GpuName = primary?.Name ?? GpuModelDatabase.ResolveName(hardware.GpuInstanceId, hardware.GpuName),
+            DisplayDriverVersion = primary?.DriverVersion ?? hardware.DisplayDriverVersion,
+            DisplayDriverOriginalInf = primary?.OriginalInf ?? hardware.DisplayDriverOriginalInf,
+            DisplayDriverPackageVersion = primary?.PackageVersion ?? ResolvePackageVersion(hardware),
+            DisplayAdapters = adapters,
+            CpuGraphicsAdapter = cpuGraphics,
+            CpuSupportUrl = ResolveCpuSupportUrl(hardware.CpuName)
         };
     }
 
@@ -164,7 +212,9 @@ public sealed class DriverWorkflow : IDisposable
         var match = Regex.Match(name, @"rx\s*(?<num>\d{4})\s*(?<suffix>xtx|xt|gre)?", RegexOptions.IgnoreCase);
         if (!match.Success)
         {
-            return null;
+            return string.Equals(hardware.CpuGraphicsAdapter?.InstanceId, hardware.GpuInstanceId, StringComparison.OrdinalIgnoreCase)
+                ? hardware.CpuSupportUrl
+                : null;
         }
 
         var num = match.Groups["num"].Value;
@@ -179,6 +229,52 @@ public sealed class DriverWorkflow : IDisposable
         };
         return $"https://www.amd.com/en/support/downloads/drivers.html/graphics/radeon-rx/{series}/amd-radeon-rx-{num}{suffix}.html";
     }
+
+    public string? ResolveCpuSupportUrl(string? cpuName)
+    {
+        var normalized = Regex.Replace(cpuName ?? "", @"\s+", " ").Trim();
+        var ryzen = Regex.Match(normalized, @"AMD\s+Ryzen\s+(?<tier>[3579])\s+(?<model>\d{4,5}(?:[A-Za-z0-9]+)?)", RegexOptions.IgnoreCase);
+        if (ryzen.Success)
+        {
+            var model = ryzen.Groups["model"].Value.ToLowerInvariant();
+            var series = model[0] switch
+            {
+                '9' => "ryzen-9000-series",
+                '8' => "ryzen-8000-series",
+                '7' => "ryzen-7000-series",
+                '6' => "ryzen-6000-series",
+                '5' => "ryzen-5000-series",
+                '4' => "ryzen-4000-series",
+                '3' => "ryzen-3000-series",
+                '2' => "ryzen-2000-series",
+                '1' => "ryzen-1000-series",
+                _ => null
+            };
+            return series is null
+                ? null
+                : $"https://www.amd.com/en/support/downloads/drivers.html/processors/ryzen/{series}/amd-ryzen-{ryzen.Groups["tier"].Value}-{model}.html";
+        }
+
+        var ryzenAi = Regex.Match(normalized, @"AMD\s+Ryzen\s+AI\s+(?<tier>[3579])\s+(?<model>[A-Za-z0-9]+(?:\s+[A-Za-z0-9]+)?)", RegexOptions.IgnoreCase);
+        if (ryzenAi.Success)
+        {
+            var model = Regex.Replace(ryzenAi.Groups["model"].Value, @"\s+", "-").ToLowerInvariant();
+            return $"https://www.amd.com/en/support/downloads/drivers.html/processors/ryzen/ryzen-ai-300-series/amd-ryzen-ai-{ryzenAi.Groups["tier"].Value}-{model}.html";
+        }
+
+        return null;
+    }
+
+    private static bool IsCpuGraphicsName(string? name) =>
+        !string.IsNullOrWhiteSpace(name) &&
+        name.Contains("Radeon", StringComparison.OrdinalIgnoreCase) &&
+        !name.Contains("Radeon RX", StringComparison.OrdinalIgnoreCase) &&
+        !name.Contains("Radeon PRO", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsCpuGraphicsAdapter(DisplayAdapterInfo? adapter) =>
+        adapter is not null &&
+        (IsCpuGraphicsName(adapter.Name) ||
+         Regex.IsMatch(adapter.InstanceId ?? "", @"PCI\\VEN_1002&DEV_(1114|15BF|15C8|164C|164D|164E|1900|1901|1902)", RegexOptions.IgnoreCase));
 
     public async Task<IReadOnlyList<DriverRelease>> GetAvailableDriversAsync(string supportUrl, Action<string> log, bool forceRefresh = false)
     {
@@ -232,16 +328,34 @@ public sealed class DriverWorkflow : IDisposable
         await EnsurePayloadsAsync();
         if (request.Driver is not null)
         {
-            var packageExe = await DownloadDriverAsync(request.Driver, false, log);
+            var packageExe = await DownloadDriverAsync(request.Driver.Primary, false, log);
             var packageRoot = await ExtractPackageAsync(packageExe, log);
+            string? cpuPackageRoot = null;
+            if (request.InstallDisplayDriver && request.Driver.CpuGraphics is not null && request.Hardware.CpuGraphicsAdapter is not null)
+            {
+                log($"Downloading CPU graphics package for {request.Driver.CpuGraphics.VersionText}.");
+                var cpuPackageExe = await DownloadDriverAsync(request.Driver.CpuGraphics, false, log);
+                cpuPackageRoot = await ExtractPackageAsync(cpuPackageExe, log);
+            }
+
             if (request.InstallDisplayDriver)
             {
-                await InstallDisplayDriverAsync(packageRoot, request, log);
+                _ = FindDisplayInf(packageRoot, request.Hardware.GpuInstanceId);
+                if (cpuPackageRoot is not null && request.Hardware.CpuGraphicsAdapter is not null)
+                {
+                    _ = FindDisplayInf(cpuPackageRoot, request.Hardware.CpuGraphicsAdapter.InstanceId);
+                }
+
+                await InstallDisplayDriverAsync(packageRoot, request.Hardware.GpuInstanceId, request.EnableServerCompatibility, request.Driver.Primary, log);
+                if (cpuPackageRoot is not null && request.Hardware.CpuGraphicsAdapter is not null && request.Driver.CpuGraphics is not null)
+                {
+                    await InstallDisplayDriverAsync(cpuPackageRoot, request.Hardware.CpuGraphicsAdapter.InstanceId, request.EnableServerCompatibility, request.Driver.CpuGraphics, log);
+                }
                 displayPackageVersion = request.Driver.VersionText;
             }
             if (request.InstallAdrenalin)
             {
-                await InstallAdrenalinAsync(packageRoot, request.Driver.VersionText, request.ReplaceAdrenalin, log);
+                await InstallAdrenalinAsync(packageRoot, request.Driver.Primary.VersionText, request.ReplaceAdrenalin, log);
             }
             if (request.AudioInstallSource == AudioInstallSource.DriverPackage)
             {
@@ -700,24 +814,24 @@ public sealed class DriverWorkflow : IDisposable
         return destination;
     }
 
-    private async Task InstallDisplayDriverAsync(string packageRoot, InstallRequest request, Action<string> log)
+    private async Task InstallDisplayDriverAsync(string packageRoot, string? instanceId, bool serverCompatibility, DriverRelease driver, Action<string> log)
     {
-        var displayInf = FindDisplayInf(packageRoot);
-        if (!request.EnableServerCompatibility)
+        var displayInf = FindDisplayInf(packageRoot, instanceId);
+        if (!serverCompatibility)
         {
             log($"Installing display driver INF: {displayInf}");
-            await StageAndForceInstallDisplayDriverAsync(displayInf, request.Hardware.GpuInstanceId, log);
-            RecordInstalledDriver(request, displayInf, log);
+            await StageAndForceInstallDisplayDriverAsync(displayInf, instanceId, log);
+            RecordInstalledDriver(instanceId, driver, displayInf, log);
             return;
         }
 
         var patchDirectory = CopyPackageDirectory(displayInf, "display");
         var patchedInf = Path.Combine(patchDirectory, Path.GetFileName(displayInf));
-        PatchDisplayInf(patchedInf, request.Hardware.GpuInstanceId, log);
+        PatchDisplayInf(patchedInf, instanceId, log);
         await SignPackageAsync(patchDirectory, patchedInf, log);
         log($"Installing patched display driver INF: {patchedInf}");
-        await StageAndForceInstallDisplayDriverAsync(patchedInf, request.Hardware.GpuInstanceId, log);
-        RecordInstalledDriver(request, patchedInf, log);
+        await StageAndForceInstallDisplayDriverAsync(patchedInf, instanceId, log);
+        RecordInstalledDriver(instanceId, driver, patchedInf, log);
     }
 
     private static async Task StageAndForceInstallDisplayDriverAsync(string infPath, string? instanceId, Action<string> log)
@@ -749,32 +863,37 @@ public sealed class DriverWorkflow : IDisposable
 
     private string? ResolvePackageVersion(HardwareInfo hardware)
     {
-        if (string.IsNullOrWhiteSpace(hardware.GpuInstanceId) || string.IsNullOrWhiteSpace(hardware.DisplayDriverVersion))
+        return ResolvePackageVersion(hardware.GpuInstanceId, hardware.DisplayDriverVersion, hardware.DisplayDriverOriginalInf);
+    }
+
+    private string? ResolvePackageVersion(string? instanceId, string? driverVersion, string? originalInf)
+    {
+        if (string.IsNullOrWhiteSpace(instanceId) || string.IsNullOrWhiteSpace(driverVersion))
         {
             return null;
         }
 
         var receipts = DriverInstallReceiptStore.Load()
-            .Where(x => string.Equals(x.GpuInstanceId, hardware.GpuInstanceId, StringComparison.OrdinalIgnoreCase))
+            .Where(x => string.Equals(x.GpuInstanceId, instanceId, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(x => x.InstalledAt)
             .ToList();
-        var receipt = string.IsNullOrWhiteSpace(hardware.DisplayDriverOriginalInf)
+        var receipt = string.IsNullOrWhiteSpace(originalInf)
             ? receipts.FirstOrDefault()
-            : receipts.FirstOrDefault(x => string.Equals(x.OriginalInf, hardware.DisplayDriverOriginalInf, StringComparison.OrdinalIgnoreCase))
+            : receipts.FirstOrDefault(x => string.Equals(x.OriginalInf, originalInf, StringComparison.OrdinalIgnoreCase))
                 ?? receipts.FirstOrDefault();
         if (receipt is not null)
         {
             return receipt.PackageVersion;
         }
 
-        if (string.IsNullOrWhiteSpace(hardware.DisplayDriverOriginalInf))
+        if (string.IsNullOrWhiteSpace(originalInf))
         {
             return null;
         }
 
         var packageMap = DriverPackageMapStore.Load()
             .OrderByDescending(x => x.RecordedAt)
-            .FirstOrDefault(x => string.Equals(x.OriginalInf, hardware.DisplayDriverOriginalInf, StringComparison.OrdinalIgnoreCase));
+            .FirstOrDefault(x => string.Equals(x.OriginalInf, originalInf, StringComparison.OrdinalIgnoreCase));
         if (packageMap is not null)
         {
             return packageMap.PackageVersion;
@@ -782,14 +901,14 @@ public sealed class DriverWorkflow : IDisposable
 
         try
         {
-            foreach (var infPath in Directory.EnumerateFiles(ExtractedRoot, hardware.DisplayDriverOriginalInf, SearchOption.AllDirectories))
+            foreach (var infPath in Directory.EnumerateFiles(ExtractedRoot, originalInf, SearchOption.AllDirectories))
             {
                 var relativePath = Path.GetRelativePath(ExtractedRoot, infPath);
                 var packageFolder = relativePath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0];
                 var version = Regex.Match(packageFolder, @"\b(?<version>\d+\.\d+\.\d+)-win(?:10|11)\b", RegexOptions.IgnoreCase).Groups["version"].Value;
                 if (!string.IsNullOrWhiteSpace(version))
                 {
-                    DriverPackageMapStore.Save(new DriverPackageMap(hardware.DisplayDriverOriginalInf, version, DateTimeOffset.UtcNow));
+                    DriverPackageMapStore.Save(new DriverPackageMap(originalInf, version, DateTimeOffset.UtcNow));
                     return version;
                 }
             }
@@ -806,9 +925,9 @@ public sealed class DriverWorkflow : IDisposable
         return null;
     }
 
-    private static void RecordInstalledDriver(InstallRequest request, string infPath, Action<string> log)
+    private static void RecordInstalledDriver(string? instanceId, DriverRelease driver, string infPath, Action<string> log)
     {
-        if (request.Driver is null || string.IsNullOrWhiteSpace(request.Hardware.GpuInstanceId))
+        if (string.IsNullOrWhiteSpace(instanceId))
         {
             return;
         }
@@ -820,12 +939,12 @@ public sealed class DriverWorkflow : IDisposable
         }
 
         DriverInstallReceiptStore.Save(new DriverInstallReceipt(
-            request.Hardware.GpuInstanceId,
+            instanceId,
             originalInf,
-            request.Driver.VersionText,
+            driver.VersionText,
             DateTimeOffset.UtcNow));
-        DriverPackageMapStore.Save(new DriverPackageMap(originalInf, request.Driver.VersionText, DateTimeOffset.UtcNow));
-        log($"Recorded installed AMD package version: {request.Driver.VersionText}.");
+        DriverPackageMapStore.Save(new DriverPackageMap(originalInf, driver.VersionText, DateTimeOffset.UtcNow));
+        log($"Recorded installed AMD package version: {driver.VersionText}.");
     }
 
     private void CaptureCachedPackageMappings()
@@ -987,14 +1106,17 @@ public sealed class DriverWorkflow : IDisposable
         await RunProcessAsync(Path.Combine(ToolsRoot, "signtool.exe"), $"verify /pa /v /c \"{catalogPath}\" \"{infPath}\"", log);
     }
 
-    private static string FindDisplayInf(string packageRoot)
+    private static string FindDisplayInf(string packageRoot, string? instanceId)
     {
+        var hardwareId = ExtractExactHardwareId(instanceId);
+        var compatibleId = hardwareId is null ? null : Regex.Match(hardwareId, @"PCI\\VEN_1002&DEV_[^&\\]+", RegexOptions.IgnoreCase).Value;
         return Directory.EnumerateFiles(packageRoot, "*.inf", SearchOption.AllDirectories)
             .Select(p => new { Path = p, Text = File.ReadAllText(p), Length = new FileInfo(p).Length })
             .Where(x => x.Text.Contains("Class=Display", StringComparison.OrdinalIgnoreCase) && x.Text.Contains(@"PCI\VEN_1002", StringComparison.OrdinalIgnoreCase))
+            .Where(x => hardwareId is null || x.Text.Contains(hardwareId, StringComparison.OrdinalIgnoreCase) || (!string.IsNullOrWhiteSpace(compatibleId) && x.Text.Contains(compatibleId, StringComparison.OrdinalIgnoreCase)))
             .OrderByDescending(x => x.Length)
             .Select(x => x.Path)
-            .FirstOrDefault() ?? throw new InvalidOperationException($"No AMD display INF found under {packageRoot}.");
+            .FirstOrDefault() ?? throw new InvalidOperationException($"No AMD display INF compatible with {hardwareId ?? "the selected adapter"} was found under {packageRoot}.");
     }
 
     private string CopyPackageDirectory(string infPath, string label)

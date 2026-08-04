@@ -36,7 +36,7 @@ internal static class Program
     private static async Task<CheckResult> CheckAsync()
     {
         var hardware = await DetectHardwareAsync();
-        var supportUrl = ResolveSupportUrl(hardware.GpuName)
+        var supportUrl = ResolveSupportUrl(hardware.GpuName, hardware.CpuName)
             ?? throw new InvalidOperationException("No mapped AMD support page was found for this GPU.");
         using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 RadeonPatcher-UpdateCheck");
@@ -56,7 +56,7 @@ internal static class Program
 
     private static async Task<Hardware> DetectHardwareAsync()
     {
-        const string script = "$gpu = Get-CimInstance Win32_PnPEntity | Where-Object { $_.PNPDeviceID -match 'VEN_1002' -and $_.PNPClass -eq 'Display' } | Select-Object -First 1; [Console]::WriteLine([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$gpu.Name))); [Console]::WriteLine([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$gpu.PNPDeviceID)))";
+        const string script = "$gpu = Get-CimInstance Win32_PnPEntity | Where-Object { $_.PNPDeviceID -match 'VEN_1002' -and $_.PNPClass -eq 'Display' } | Sort-Object @{ Expression = { if ($_.Name -match 'Radeon\\s+RX|Radeon\\s+PRO') { 0 } else { 1 } } }, Name | Select-Object -First 1; $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1; [Console]::WriteLine([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$gpu.Name))); [Console]::WriteLine([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$gpu.PNPDeviceID))); [Console]::WriteLine([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$cpu.Name)))";
         var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
         var start = new ProcessStartInfo("powershell.exe", $"-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand {encoded}")
         {
@@ -73,14 +73,21 @@ internal static class Program
         var error = await errorTask;
         if (process.ExitCode != 0) throw new InvalidOperationException(error.Trim());
         var lines = output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
-        if (lines.Length < 2) throw new InvalidOperationException("No AMD display adapter was detected.");
-        return new Hardware(Decode(lines[0]), Decode(lines[1]));
+        if (lines.Length < 3) throw new InvalidOperationException("No AMD display adapter was detected.");
+        return new Hardware(Decode(lines[0]), Decode(lines[1]), Decode(lines[2]));
     }
 
-    private static string? ResolveSupportUrl(string gpuName)
+    private static string? ResolveSupportUrl(string gpuName, string cpuName)
     {
         var match = Regex.Match(gpuName, @"rx\s*(?<num>\d{4})\s*(?<suffix>xtx|xt|gre)?", RegexOptions.IgnoreCase);
-        if (!match.Success) return null;
+        if (!match.Success)
+        {
+            var cpu = Regex.Match(cpuName, @"AMD\s+Ryzen\s+(?<tier>[3579])\s+(?<model>\d{4,5}(?:[A-Za-z0-9]+)?)", RegexOptions.IgnoreCase);
+            if (!cpu.Success) return null;
+            var model = cpu.Groups["model"].Value.ToLowerInvariant();
+            var cpuSeries = model[0] switch { '9' => "ryzen-9000-series", '8' => "ryzen-8000-series", '7' => "ryzen-7000-series", '6' => "ryzen-6000-series", '5' => "ryzen-5000-series", '4' => "ryzen-4000-series", '3' => "ryzen-3000-series", '2' => "ryzen-2000-series", '1' => "ryzen-1000-series", _ => null };
+            return cpuSeries is null ? null : $"https://www.amd.com/en/support/downloads/drivers.html/processors/ryzen/{cpuSeries}/amd-ryzen-{cpu.Groups["tier"].Value}-{model}.html";
+        }
         var number = match.Groups["num"].Value;
         var suffix = match.Groups["suffix"].Success ? "-" + match.Groups["suffix"].Value.ToLowerInvariant() : "";
         var series = number[0] switch { '9' => "radeon-rx-9000-series", '7' => "radeon-rx-7000-series", '6' => "radeon-rx-6000-series", '5' => "radeon-rx-5000-series", _ => "radeon-rx-series" };
@@ -161,7 +168,7 @@ internal static class Program
     }
 
     private static string Decode(string value) => Encoding.UTF8.GetString(Convert.FromBase64String(value.Trim()));
-    private sealed record Hardware(string GpuName, string InstanceId);
+    private sealed record Hardware(string GpuName, string InstanceId, string CpuName);
     private sealed record DriverReceipt(string GpuInstanceId, string OriginalInf, string PackageVersion, DateTimeOffset InstalledAt);
     private sealed record CheckerSettings(string? LastApplicationPath);
     private sealed record CheckResult(bool UpdateAvailable, string? CurrentVersion, string LatestVersion, string Message);

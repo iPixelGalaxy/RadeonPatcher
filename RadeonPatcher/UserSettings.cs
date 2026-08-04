@@ -10,6 +10,7 @@ public sealed class UserSettings
     public bool InstallAudioDriver { get; set; } = true;
     public bool AutoClearDownloadedCache { get; set; } = true;
     public string? CustomSupportUrl { get; set; }
+    public string? CustomCpuSupportUrl { get; set; }
     public string? SelectedDriverVersion { get; set; }
     public string? LastInstalledDisplayPackageVersion { get; set; }
     public string? LastInstalledAudioDriverVersion { get; set; }

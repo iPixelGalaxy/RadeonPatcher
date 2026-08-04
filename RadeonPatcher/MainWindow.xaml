@@ -474,12 +474,14 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                     <TextBlock FontWeight="SemiBold" Text="Detected hardware"/>
                     <TextBlock x:Name="GpuText" Grid.Row="1" Margin="0,8,0,0" TextWrapping="Wrap"/>
                     <Button x:Name="RefreshButton" Grid.Column="1" Grid.RowSpan="2" Width="130" Height="34" HorizontalAlignment="Left" Content="Refresh" Click="RefreshButton_Click"/>
                     <TextBlock x:Name="DisplayDriverText" Grid.Row="2" Margin="0,8,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
                     <TextBlock x:Name="AudioText" Grid.Row="2" Grid.Column="1" Margin="0,8,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
+                    <TextBlock x:Name="CpuGraphicsText" Grid.Row="3" Grid.ColumnSpan="2" Margin="0,8,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
                 </Grid>
                 <StackPanel Grid.Column="1">
                     <TextBlock FontWeight="SemiBold" Text="System"/>
@@ -503,6 +505,10 @@
                         <StackPanel x:Name="CustomUrlPanel" Visibility="Collapsed">
                             <TextBlock Margin="0,0,0,4" Text="AMD support URL"/>
                             <TextBox x:Name="SupportUrlBox" Height="30" TextWrapping="NoWrap" LostFocus="SupportUrlBox_LostFocus"/>
+                        </StackPanel>
+                        <StackPanel x:Name="CpuSupportUrlPanel" Visibility="Collapsed" Margin="0,10,0,0">
+                            <TextBlock Margin="0,0,0,4" Text="CPU graphics AMD support URL"/>
+                            <TextBox x:Name="CpuSupportUrlBox" Height="30" TextWrapping="NoWrap" LostFocus="CpuSupportUrlBox_LostFocus"/>
                         </StackPanel>
                     </StackPanel>
 

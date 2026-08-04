@@ -90,17 +90,28 @@ public partial class MainWindow : Window
                 : _hardware.AudioDriverVersion is null
                 ? "Installed AMD HD Audio Driver: None"
                 : $"Installed AMD HD Audio Driver: {_hardware.AudioDriverVersion}";
+            CpuGraphicsText.Text = _hardware.CpuGraphicsAdapter is not null
+                ? $"CPU Graphics: {_hardware.CpuGraphicsAdapter.Name ?? "AMD Radeon Graphics"} ({_hardware.CpuGraphicsAdapter.PackageVersion ?? _hardware.CpuGraphicsAdapter.DriverVersion ?? "driver unknown"})"
+                : !string.IsNullOrWhiteSpace(_hardware.CpuSupportUrl)
+                    ? $"CPU Graphics: {_hardware.CpuName ?? "AMD processor"} integrated graphics not detected. Enable it in firmware, then refresh."
+                    : "";
 
             var savedCustomUrl = _settings.CustomSupportUrl;
             var supportUrl = string.IsNullOrWhiteSpace(savedCustomUrl)
                 ? _workflow.ResolveSupportUrl(_hardware) ?? ""
                 : savedCustomUrl;
             SupportUrlBox.Text = supportUrl;
+            var cpuSupportUrl = string.IsNullOrWhiteSpace(_settings.CustomCpuSupportUrl)
+                ? _hardware.CpuSupportUrl ?? ""
+                : _settings.CustomCpuSupportUrl;
+            CpuSupportUrlBox.Text = cpuSupportUrl;
+            var hasCpuGraphics = _hardware.CpuGraphicsAdapter is not null;
             var needsCustomUrl = !string.IsNullOrWhiteSpace(savedCustomUrl) || string.IsNullOrWhiteSpace(supportUrl);
-            DriverSourcePanel.Visibility = needsCustomUrl ? Visibility.Visible : Visibility.Collapsed;
+            DriverSourcePanel.Visibility = needsCustomUrl || hasCpuGraphics ? Visibility.Visible : Visibility.Collapsed;
             CustomUrlCheck.Visibility = needsCustomUrl ? Visibility.Visible : Visibility.Collapsed;
             CustomUrlCheck.IsChecked = needsCustomUrl;
             CustomUrlPanel.Visibility = needsCustomUrl ? Visibility.Visible : Visibility.Collapsed;
+            CpuSupportUrlPanel.Visibility = hasCpuGraphics ? Visibility.Visible : Visibility.Collapsed;
             SourceSummaryText.Text = needsCustomUrl
                 ? "No mapped AMD support page was found. Enter a custom AMD support URL."
                 : $"Using detected AMD support page for {_hardware.GpuName}.";
@@ -151,10 +162,41 @@ public partial class MainWindow : Window
 
         Log($"Loading AMD driver versions from {supportUrl}");
         var drivers = await _workflow.GetAvailableDriversAsync(supportUrl, Log, forceRefresh);
-        DriverCombo.ItemsSource = drivers;
-        DriverCombo.SelectedItem = drivers.FirstOrDefault(d => string.Equals(d.VersionText, _settings.SelectedDriverVersion, StringComparison.OrdinalIgnoreCase));
-        DriverCombo.SelectedIndex = DriverCombo.SelectedItem is null && drivers.Count > 0 ? 0 : DriverCombo.SelectedIndex;
-        Log($"Loaded {drivers.Count} driver option(s).");
+        IReadOnlyList<DriverSelection> selections;
+        var cpuGraphicsNeedsSeparatePackage = _hardware?.CpuGraphicsAdapter is not null &&
+            !string.Equals(_hardware.CpuGraphicsAdapter.InstanceId, _hardware.GpuInstanceId, StringComparison.OrdinalIgnoreCase);
+        if (cpuGraphicsNeedsSeparatePackage)
+        {
+            var cpuSupportUrl = CpuSupportUrlBox.Text.Trim();
+            if (string.IsNullOrWhiteSpace(cpuSupportUrl))
+            {
+                Log("CPU graphics support URL is required before selecting a synced driver version.");
+                return;
+            }
+
+            Log($"Loading CPU graphics driver versions from {cpuSupportUrl}");
+            var cpuDrivers = await _workflow.GetAvailableDriversAsync(cpuSupportUrl, Log, forceRefresh);
+            var cpuByVersion = cpuDrivers
+                .GroupBy(driver => driver.VersionText, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+            selections = drivers
+                .Where(driver => cpuByVersion.ContainsKey(driver.VersionText))
+                .Select(driver => new DriverSelection(driver, cpuByVersion[driver.VersionText]))
+                .ToList();
+            if (selections.Count == 0)
+            {
+                Log("No driver version is shared by the discrete GPU and CPU graphics support pages.");
+            }
+        }
+        else
+        {
+            selections = drivers.Select(driver => new DriverSelection(driver, null)).ToList();
+        }
+
+        DriverCombo.ItemsSource = selections;
+        DriverCombo.SelectedItem = selections.FirstOrDefault(d => string.Equals(d.VersionText, _settings.SelectedDriverVersion, StringComparison.OrdinalIgnoreCase));
+        DriverCombo.SelectedIndex = DriverCombo.SelectedItem is null && selections.Count > 0 ? 0 : DriverCombo.SelectedIndex;
+        Log($"Loaded {selections.Count} driver option(s).");
     }
 
     private async void CustomUrlCheck_Changed(object sender, RoutedEventArgs e)
@@ -194,6 +236,15 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void CpuSupportUrlBox_LostFocus(object sender, RoutedEventArgs e)
+    {
+        if (_hardware?.CpuGraphicsAdapter is not null)
+        {
+            SaveSettings();
+            await Busy(() => LoadDriversAsync());
+        }
+    }
+
     private async void InstallButton_Click(object sender, RoutedEventArgs e)
     {
         var installed = false;
@@ -204,7 +255,7 @@ public partial class MainWindow : Window
             var hardware = _hardware ?? await _workflow.GetHardwareInfoAsync();
             var request = new InstallRequest(
                 hardware,
-                DriverCombo.SelectedItem as DriverRelease,
+                DriverCombo.SelectedItem as DriverSelection,
                 SupportUrlBox.Text.Trim(),
                 InstallDisplayDriverCheck.IsChecked == true,
                 hardware.IsServer,
@@ -512,7 +563,7 @@ public partial class MainWindow : Window
 
     private void UpdateSelectedDriverText()
     {
-        if (DriverCombo.SelectedItem is not DriverRelease driver)
+        if (DriverCombo.SelectedItem is not DriverSelection driver)
         {
             SelectedDriverText.Text = "";
             InstallDisplayDriverCheck.Content = "Install GPU Driver";
@@ -548,7 +599,7 @@ public partial class MainWindow : Window
 
     private bool IsSelectedDriverDifferentFromCurrent()
     {
-        var selectedVersion = (DriverCombo.SelectedItem as DriverRelease)?.VersionText;
+        var selectedVersion = (DriverCombo.SelectedItem as DriverSelection)?.VersionText;
         var currentVersion = GetEffectiveDisplayPackageVersion();
         return Version.TryParse(selectedVersion, out var selected) &&
             Version.TryParse(currentVersion, out var current) &&
@@ -558,7 +609,7 @@ public partial class MainWindow : Window
     private void UpdateAdrenalinControl()
     {
         var currentVersion = GetEffectiveDisplayPackageVersion();
-        var selectedVersion = (DriverCombo.SelectedItem as DriverRelease)?.VersionText;
+        var selectedVersion = (DriverCombo.SelectedItem as DriverSelection)?.VersionText;
         var action = "Install";
         var forceInstall = false;
         var adrenalinInstalled = _hardware?.IsAdrenalinInstalled == true;
@@ -622,6 +673,7 @@ public partial class MainWindow : Window
         _settings.InstallAudioDriver = AudioCheck.IsChecked == true;
         _settings.AutoClearDownloadedCache = AutoClearDownloadCacheCheck.IsChecked == true;
         _settings.CustomSupportUrl = CustomUrlCheck.IsChecked == true ? SupportUrlBox.Text.Trim() : null;
+        _settings.CustomCpuSupportUrl = CpuSupportUrlBox.Text.Trim();
         var currentSettings = UserSettingsStore.Load();
         _settings.IgnoredAppUpdateVersion = currentSettings.IgnoredAppUpdateVersion;
         UserSettingsStore.Save(_settings);

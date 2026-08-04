@@ -12,10 +12,10 @@ This project is not affiliated with, endorsed by, sponsored by, or supported by 
 
 ## Features
 
-- Detects AMD display hardware without requiring an existing AMD driver.
+- Detects AMD display hardware without requiring an existing AMD driver, including CPU graphics when Windows exposes it.
 - Detects installed Radeon package and AMD HD Audio driver versions.
 - Loads current and previous driver releases from the GPU's AMD support page.
-- Updates, downgrades, or reinstalls the selected display driver.
+- Updates, downgrades, or reinstalls the selected display driver. Systems with Radeon RX plus AMD CPU graphics use matching driver versions from both AMD support pages.
 - Patches and locally signs display and audio catalogs when compatibility changes are required.
 - Adds Windows Server INF compatibility automatically on Server editions.
 - Installs, updates, downgrades, reinstalls, or removes AMD Software: Adrenalin Edition.
