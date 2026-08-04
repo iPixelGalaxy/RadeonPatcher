@@ -366,9 +366,11 @@ public partial class MainWindow : Window
             : _hardware?.DisplayDriverPackageVersion;
 
     private string? GetEffectiveCpuGraphicsPackageVersion() =>
-        IsForcedVersionCurrent(_settings.LastInstalledCpuGraphicsPackageAt)
-            ? _settings.LastInstalledCpuGraphicsPackageVersion
-            : _hardware?.CpuGraphicsAdapter?.PackageVersion ?? _hardware?.CpuGraphicsAdapter?.DriverVersion;
+        _hardware?.CpuGraphicsAdapter is { UsesBasicDisplayDriver: true }
+            ? null
+            : IsForcedVersionCurrent(_settings.LastInstalledCpuGraphicsPackageAt)
+                ? _settings.LastInstalledCpuGraphicsPackageVersion
+                : _hardware?.CpuGraphicsAdapter?.PackageVersion;
 
     private async Task RefreshAfterForcedVersionExpiresAsync(DateTimeOffset installedAt)
     {

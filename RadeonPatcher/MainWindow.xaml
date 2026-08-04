@@ -472,13 +472,15 @@
                         <TextBlock x:Name="GpuText" Margin="0,8,0,0" TextWrapping="NoWrap"/>
                     </StackPanel>
                     <Button x:Name="RefreshButton" Width="130" Height="34" Margin="18,0,0,0" VerticalAlignment="Center" Content="Refresh" Click="RefreshButton_Click"/>
-                    <TextBlock x:Name="AudioText" Margin="18,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="NoWrap"/>
                     <StackPanel Margin="18,0,0,0">
                         <TextBlock FontWeight="SemiBold" Text="System"/>
                         <TextBlock x:Name="OsText" Margin="0,8,0,0" TextWrapping="NoWrap"/>
                     </StackPanel>
                 </StackPanel>
-                <TextBlock x:Name="DisplayDriverText" Grid.Row="1" Margin="0,8,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="NoWrap"/>
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8,0,0">
+                    <TextBlock x:Name="DisplayDriverText" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="NoWrap"/>
+                    <TextBlock x:Name="AudioText" Margin="32,0,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="NoWrap"/>
+                </StackPanel>
                 <TextBlock x:Name="CpuGraphicsText" Grid.Row="2" Margin="0,8,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="NoWrap"/>
             </Grid>
         </Border>
