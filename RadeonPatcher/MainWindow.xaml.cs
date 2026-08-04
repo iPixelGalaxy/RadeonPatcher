@@ -662,10 +662,9 @@ public partial class MainWindow : Window
     private void UpdateInstallTargetControls()
     {
         var hasPrimaryAmdGpu = HasPrimaryAmdGpu();
+        InstallDisplayDriverCheck.Visibility = hasPrimaryAmdGpu ? Visibility.Visible : Visibility.Collapsed;
         InstallDisplayDriverCheck.IsEnabled = hasPrimaryAmdGpu;
-        InstallDisplayDriverCheck.ToolTip = hasPrimaryAmdGpu
-            ? null
-            : "Install GPU Driver is available only when Windows primary display uses an AMD discrete GPU.";
+        InstallDisplayDriverCheck.ToolTip = null;
 
         var hasCpuGraphics = _hardware?.CpuGraphicsAdapter is not null;
         InstallCpuGraphicsDriverCheck.Visibility = hasCpuGraphics ? Visibility.Visible : Visibility.Collapsed;
