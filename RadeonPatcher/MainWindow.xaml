@@ -471,7 +471,7 @@
 
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="430"/>
+                <ColumnDefinition Width="390"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
@@ -501,10 +501,10 @@
                                 <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="16" Text="&#xE72C;"/>
                             </Button>
                         </Grid>
-                        <TextBlock x:Name="GpuText" Grid.Row="1" Margin="0,8,0,0" TextWrapping="Wrap"/>
-                        <TextBlock x:Name="DisplayDriverText" Grid.Row="2" Margin="0,8,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
-                        <TextBlock x:Name="AudioText" Grid.Row="3" Margin="0,8,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
-                        <TextBlock x:Name="CpuGraphicsText" Grid.Row="4" Margin="0,8,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
+                        <TextBlock x:Name="GpuText" Grid.Row="1" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                        <TextBlock x:Name="DisplayDriverText" Grid.Row="2" Margin="0,4,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
+                        <TextBlock x:Name="AudioText" Grid.Row="3" Margin="0,4,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
+                        <TextBlock x:Name="CpuGraphicsText" Grid.Row="4" Margin="0,4,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
                     </Grid>
                 </Border>
 

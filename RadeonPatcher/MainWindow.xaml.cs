@@ -101,10 +101,10 @@ public partial class MainWindow : Window
             var cpuName = FormatCpuDisplayName(_hardware.CpuName);
             CpuGraphicsText.Text = _hardware.CpuGraphicsAdapter is { } cpuGraphics
                 ? cpuGraphics.UsesBasicDisplayDriver
-                    ? $"CPU Graphics: {cpuName}. Status: Enabled, using Microsoft Basic Display Adapter."
-                    : $"CPU Graphics: {cpuName}. Status: Enabled ({(cpuGraphicsForced ? _settings.LastInstalledCpuGraphicsPackageVersion : cpuGraphics.PackageVersion) ?? cpuGraphics.DriverVersion ?? "AMD driver not installed"})."
+                    ? $"CPU Graphics: {cpuName}{Environment.NewLine}Status: Enabled, using Microsoft Basic Display Adapter."
+                    : $"CPU Graphics: {cpuName}{Environment.NewLine}Status: Enabled ({(cpuGraphicsForced ? _settings.LastInstalledCpuGraphicsPackageVersion : cpuGraphics.PackageVersion) ?? cpuGraphics.DriverVersion ?? "AMD driver not installed"})."
                 : !string.IsNullOrWhiteSpace(_hardware.CpuSupportUrl)
-                    ? $"CPU Graphics: {cpuName}. Status: Disabled in firmware."
+                    ? $"CPU Graphics: {cpuName}{Environment.NewLine}Status: Disabled in firmware."
                     : "";
 
             UpdateInstallTargetControls();
