@@ -902,7 +902,7 @@ public partial class MainWindow : Window
     private void ApplyTheme()
     {
         var dark = IsDarkTheme();
-        SetThemeBrush("WindowBackgroundBrush", dark ? "#242123" : "#F6F1F2");
+        SetThemeBrush("WindowBackgroundBrush", dark ? "#201D1F" : "#EEE9EA");
         SetThemeBrush("PanelBackgroundBrush", dark ? "#2F2B2E" : "#FFFCFB");
         SetThemeBrush("PanelBorderBrush", dark ? "#4F464B" : "#DFD4D7");
         SetThemeBrush("PrimaryTextBrush", dark ? "#F1EEF0" : "#292529");
