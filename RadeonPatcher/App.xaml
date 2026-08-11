@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:RadeonPatcher">
     <Application.Resources>
-        <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#EEE9EA"/>
+        <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#F1E9E4"/>
         <SolidColorBrush x:Key="PanelBackgroundBrush" Color="#FFFCFB"/>
         <SolidColorBrush x:Key="PanelBorderBrush" Color="#DFD4D7"/>
         <SolidColorBrush x:Key="PrimaryTextBrush" Color="#292529"/>
