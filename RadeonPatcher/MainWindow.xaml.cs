@@ -92,7 +92,7 @@ public partial class MainWindow : Window
                     ? "Installed Video Driver: None"
                     : "Installed Video Driver: Unknown"
                 : $"Installed Video Driver: {_hardware.DisplayDriverPackageVersion}";
-            OsText.Text = $"{_hardware.OsName} ({_hardware.OsVersion})";
+            OsText.Text = $"OS: {_hardware.OsName} ({_hardware.OsVersion})";
             AudioText.Text = audioForced
                 ? $"Installed AMD HD Audio Driver: {_settings.LastInstalledAudioDriverVersion ?? "None"}"
                 : _hardware.AudioDriverVersion is null
