@@ -17,8 +17,8 @@ internal static class DialogTheme
 
         if (dark)
         {
-            var captionColor = ColorRef(0x2B, 0x2E, 0x33);
-            var textColor = ColorRef(0xEC, 0xEF, 0xF3);
+            var captionColor = ColorRef(0x33, 0x27, 0x29);
+            var textColor = ColorRef(0xF5, 0xEC, 0xEC);
             _ = DwmSetWindowAttribute(handle, 35, ref captionColor, sizeof(int));
             _ = DwmSetWindowAttribute(handle, 36, ref textColor, sizeof(int));
         }

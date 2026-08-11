@@ -8,22 +8,22 @@
     <Window.Resources>
         <local:ProgressIndicatorWidthConverter x:Key="ProgressIndicatorWidthConverter"/>
         <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#F9EDEC"/>
-        <SolidColorBrush x:Key="PanelBackgroundBrush" Color="#FFFFFF"/>
-        <SolidColorBrush x:Key="PanelBorderBrush" Color="#D7DEE7"/>
-        <SolidColorBrush x:Key="PrimaryTextBrush" Color="#1F2933"/>
-        <SolidColorBrush x:Key="SecondaryTextBrush" Color="#52606D"/>
-        <SolidColorBrush x:Key="InputBackgroundBrush" Color="#FFFFFF"/>
-        <SolidColorBrush x:Key="InputBorderBrush" Color="#BAC5D1"/>
-        <SolidColorBrush x:Key="ButtonBackgroundBrush" Color="#E8EEF5"/>
-        <SolidColorBrush x:Key="ButtonForegroundBrush" Color="#1F2933"/>
-        <SolidColorBrush x:Key="LogBackgroundBrush" Color="#101820"/>
-        <SolidColorBrush x:Key="LogForegroundBrush" Color="#E8F0F7"/>
+        <SolidColorBrush x:Key="PanelBackgroundBrush" Color="#FFF9F8"/>
+        <SolidColorBrush x:Key="PanelBorderBrush" Color="#E6C9C6"/>
+        <SolidColorBrush x:Key="PrimaryTextBrush" Color="#33201F"/>
+        <SolidColorBrush x:Key="SecondaryTextBrush" Color="#735553"/>
+        <SolidColorBrush x:Key="InputBackgroundBrush" Color="#FFFDFC"/>
+        <SolidColorBrush x:Key="InputBorderBrush" Color="#D3AAA5"/>
+        <SolidColorBrush x:Key="ButtonBackgroundBrush" Color="#F4DEDB"/>
+        <SolidColorBrush x:Key="ButtonForegroundBrush" Color="#33201F"/>
+        <SolidColorBrush x:Key="LogBackgroundBrush" Color="#FFF8F7"/>
+        <SolidColorBrush x:Key="LogForegroundBrush" Color="#33201F"/>
         <SolidColorBrush x:Key="LogoBrush" Color="#D93626"/>
         <SolidColorBrush x:Key="LogoHoverBrush" Color="#B72D20"/>
-        <SolidColorBrush x:Key="SelectionBackgroundBrush" Color="#DCE7F3"/>
-        <SolidColorBrush x:Key="ScrollTrackBrush" Color="#1A232D"/>
-        <SolidColorBrush x:Key="ScrollThumbBrush" Color="#495565"/>
-        <SolidColorBrush x:Key="ScrollThumbHoverBrush" Color="#5D6A7B"/>
+        <SolidColorBrush x:Key="SelectionBackgroundBrush" Color="#F4CFCA"/>
+        <SolidColorBrush x:Key="ScrollTrackBrush" Color="#F1DDDA"/>
+        <SolidColorBrush x:Key="ScrollThumbBrush" Color="#C99791"/>
+        <SolidColorBrush x:Key="ScrollThumbHoverBrush" Color="#B87871"/>
 
         <Style TargetType="TextBlock">
             <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}"/>
