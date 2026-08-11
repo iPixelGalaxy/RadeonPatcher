@@ -75,6 +75,7 @@
                             <Trigger Property="IsChecked" Value="True">
                                 <Setter TargetName="CheckBorder" Property="Background" Value="{DynamicResource LogoBrush}"/>
                                 <Setter TargetName="CheckBorder" Property="BorderBrush" Value="{DynamicResource LogoBrush}"/>
+                                <Setter TargetName="CheckBorder" Property="BorderThickness" Value="0"/>
                                 <Setter TargetName="CheckMark" Property="Visibility" Value="Visible"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
