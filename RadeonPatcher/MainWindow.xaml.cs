@@ -25,6 +25,10 @@ public partial class MainWindow : Window
     private bool _canUninstallAudioDriver;
     private bool _canUninstallAdrenalin;
     private int _busyOperationCount;
+    private int _hardwareRefreshGeneration;
+    private HardwareInfo? _progressDisplayHardware;
+    private string? _progressCpuName;
+    private string? _progressCpuSupportUrl;
     private readonly string _appVersionTag;
 
     public MainWindow()
@@ -54,13 +58,22 @@ public partial class MainWindow : Window
 
     private async Task RefreshAsync(bool refreshDrivers = false)
     {
+        var generation = Interlocked.Increment(ref _hardwareRefreshGeneration);
+        _progressDisplayHardware = null;
+        _progressCpuName = null;
+        _progressCpuSupportUrl = null;
+        if (_hardware is not null) SetHardwareSectionOpacity(0.45);
+        var completed = false;
         await Busy(async () =>
         {
-            Log("Refreshing detected hardware and extracting embedded tools.");
-            var hardwareTask = _workflow.GetHardwareInfoAsync();
-            var payloadTask = _workflow.EnsurePayloadsAsync();
-            await Task.WhenAll(hardwareTask, payloadTask);
-            _hardware = await hardwareTask;
+            try
+            {
+                Log("Refreshing detected hardware and extracting embedded tools.");
+                var progress = new Progress<HardwareDetectionProgress>(update => ApplyHardwareDetectionProgress(generation, update));
+                var hardwareTask = _workflow.GetHardwareInfoAsync(progress);
+                var payloadTask = _workflow.EnsurePayloadsAsync();
+                await Task.WhenAll(hardwareTask, payloadTask);
+                _hardware = await hardwareTask;
             if (_hardware.IsUpdateCheckServiceInstalled)
             {
                 await _workflow.EnsureUpdateCheckServiceCurrentAsync(GetSavedUpdateCheckFrequency(), Log);
@@ -170,8 +183,89 @@ public partial class MainWindow : Window
             UpdateMpoButtonText();
             UpdateSelectedDriverText();
             Log("Ready.");
-            await LoadDriversAsync(refreshDrivers);
+                await LoadDriversAsync(refreshDrivers);
+                completed = true;
+            }
+            finally
+            {
+                if (!completed) SetHardwareSectionOpacity(1);
+            }
         });
+    }
+
+    private void ApplyHardwareDetectionProgress(int generation, HardwareDetectionProgress update)
+    {
+        if (generation != _hardwareRefreshGeneration) return;
+
+        switch (update)
+        {
+            case OsDetectionProgress os:
+                OsText.Text = $"OS: {os.OsName} ({os.OsVersion})";
+                OsText.Opacity = 1;
+                break;
+            case DisplayDetectionProgress display:
+                _progressDisplayHardware = display.Hardware;
+                PopulateDisplayRows(display.Hardware);
+                GpuText.Opacity = DisplayDriverText.Opacity = AudioText.Opacity = 1;
+                UpdateProgressCpuGraphicsRows();
+                break;
+            case CpuDetectionProgress cpu:
+                _progressCpuName = cpu.CpuName;
+                _progressCpuSupportUrl = cpu.CpuSupportUrl;
+                CpuGraphicsNameText.Text = $"CPU Graphics: {FormatCpuDisplayName(cpu.CpuName)}";
+                CpuGraphicsNameText.Opacity = 1;
+                UpdateProgressCpuGraphicsRows();
+                break;
+            case SystemStateDetectionProgress state:
+                UpdateCheckServiceButtonText.Text = state.IsUpdateCheckServiceInstalled
+                    ? "Uninstall Update Check Service"
+                    : "Install Update Check Service";
+                ToggleMpoButtonText.Text = state.IsMpoDisabled ? "Turn MPO On" : "Turn MPO Off";
+                break;
+        }
+    }
+
+    private void PopulateDisplayRows(HardwareInfo hardware)
+    {
+        var displayForced = IsForcedVersionCurrent(_settings.LastInstalledDisplayPackageAt);
+        var audioForced = IsForcedVersionCurrent(_settings.LastInstalledAudioDriverAt);
+        var primaryDisplay = hardware.PrimaryDisplayAdapter;
+        GpuText.Text = FormatGpuList(hardware);
+        DisplayDriverText.Text = primaryDisplay is not null && !string.Equals(primaryDisplay.InstanceId, hardware.GpuInstanceId, StringComparison.OrdinalIgnoreCase)
+            ? primaryDisplay.UsesBasicDisplayDriver ? "Primary Display Driver: Microsoft Basic Display Adapter" : $"Primary Display Driver: {primaryDisplay.DriverProviderName ?? "Unknown"} {primaryDisplay.DriverVersion ?? "driver unknown"}"
+            : displayForced ? $"Installed Video Driver: {_settings.LastInstalledDisplayPackageVersion ?? "None"}"
+            : hardware.DisplayDriverPackageVersion is null ? hardware.DisplayDriverVersion is null ? "Installed Video Driver: None" : "Installed Video Driver: Unknown"
+            : $"Installed Video Driver: {hardware.DisplayDriverPackageVersion}";
+        AudioText.Text = audioForced ? $"Installed AMD HD Audio Driver: {_settings.LastInstalledAudioDriverVersion ?? "None"}"
+            : hardware.AudioDriverVersion is null ? "Installed AMD HD Audio Driver: None" : $"Installed AMD HD Audio Driver: {hardware.AudioDriverVersion}";
+    }
+
+    private void UpdateProgressCpuGraphicsRows()
+    {
+        if (_progressDisplayHardware is null || _progressCpuName is null) return;
+        var cpuGraphics = _progressDisplayHardware.CpuGraphicsAdapter;
+        if (cpuGraphics is not null)
+        {
+            CpuGraphicsNameText.Text = $"CPU Graphics: {FormatCpuDisplayName(_progressCpuName)}";
+            var forced = IsForcedVersionCurrent(_settings.LastInstalledCpuGraphicsPackageAt);
+            CpuGraphicsStatusText.Text = cpuGraphics.UsesBasicDisplayDriver ? "CPU Graphics Status: Enabled, using Microsoft Basic Display Adapter."
+                : $"CPU Graphics Status: Enabled ({(forced ? _settings.LastInstalledCpuGraphicsPackageVersion : cpuGraphics.PackageVersion) ?? cpuGraphics.DriverVersion ?? "AMD driver not installed"}).";
+        }
+        else if (!string.IsNullOrWhiteSpace(_progressCpuSupportUrl))
+        {
+            CpuGraphicsStatusText.Text = "CPU Graphics Status: Disabled in firmware.";
+        }
+        else
+        {
+            CpuGraphicsNameText.Text = "";
+            CpuGraphicsStatusText.Text = "";
+        }
+        CpuGraphicsNameText.Opacity = CpuGraphicsStatusText.Opacity = 1;
+    }
+
+    private void SetHardwareSectionOpacity(double opacity)
+    {
+        OsText.Opacity = GpuText.Opacity = DisplayDriverText.Opacity = AudioText.Opacity = CpuGraphicsNameText.Opacity = CpuGraphicsStatusText.Opacity = opacity;
     }
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e) => await RefreshAsync(refreshDrivers: true);

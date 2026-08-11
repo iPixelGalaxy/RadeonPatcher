@@ -42,6 +42,16 @@ public sealed record DisplayAdapterInfo(
     bool UsesBasicDisplayDriver = false,
     bool IsPrimary = false);
 
+internal abstract record HardwareDetectionProgress;
+internal sealed record OsDetectionProgress(string OsName, string OsVersion, bool IsServer) : HardwareDetectionProgress;
+internal sealed record DisplayDetectionProgress(HardwareInfo Hardware) : HardwareDetectionProgress;
+internal sealed record CpuDetectionProgress(string? CpuName, string? CpuSupportUrl) : HardwareDetectionProgress;
+internal sealed record SystemStateDetectionProgress(bool IsMpoDisabled, bool IsUpdateCheckServiceInstalled, bool IsAdrenalinInstalled) : HardwareDetectionProgress;
+
+internal sealed record OsDetectionResult(string OsName, string OsVersion, bool IsServer);
+internal sealed record DisplayDetectionResult(IReadOnlyList<DisplayAdapterInfo>? DisplayAdapters, string? AudioDriverVersion);
+internal sealed record SystemStateDetectionResult(bool IsMpoDisabled, bool IsUpdateCheckServiceInstalled, bool IsAdrenalinInstalled);
+
 public sealed record DriverRelease(
     string DisplayName,
     string VersionText,
@@ -136,7 +146,86 @@ public sealed class DriverWorkflow : IDisposable
 
     public async Task<HardwareInfo> GetHardwareInfoAsync()
     {
-        var display = await RunPowerShellAsync("""
+        return await GetHardwareInfoAsync(null);
+    }
+
+    internal async Task<HardwareInfo> GetHardwareInfoAsync(IProgress<HardwareDetectionProgress>? progress)
+    {
+        var osTask = DetectOsAsync();
+        var displayTask = DetectDisplayAsync();
+        var cpuTask = DetectCpuAsync();
+        var systemStateTask = DetectSystemStateAsync();
+
+        var pending = new List<Task> { osTask, displayTask, cpuTask, systemStateTask };
+        while (pending.Count > 0)
+        {
+            var completed = await Task.WhenAny(pending);
+            pending.Remove(completed);
+            if (completed == osTask)
+            {
+                var os = await osTask;
+                progress?.Report(new OsDetectionProgress(os.OsName, os.OsVersion, os.IsServer));
+            }
+            else if (completed == displayTask)
+            {
+                var display = await displayTask;
+                progress?.Report(new DisplayDetectionProgress(CreateHardware(display, null, null, null)));
+            }
+            else if (completed == cpuTask)
+            {
+                var cpuName = await cpuTask;
+                progress?.Report(new CpuDetectionProgress(cpuName, ResolveCpuSupportUrl(cpuName)));
+            }
+            else
+            {
+                var state = await systemStateTask;
+                progress?.Report(new SystemStateDetectionProgress(state.IsMpoDisabled, state.IsUpdateCheckServiceInstalled, state.IsAdrenalinInstalled));
+            }
+        }
+
+        var osResult = await osTask;
+        var displayResult = await displayTask;
+        var cpu = await cpuTask;
+        var stateResult = await systemStateTask;
+        return CreateHardware(displayResult, osResult, cpu, stateResult);
+    }
+
+    private HardwareInfo CreateHardware(DisplayDetectionResult displayResult, OsDetectionResult? osResult, string? cpu, SystemStateDetectionResult? stateResult)
+    {
+        var adapters = CompleteDisplayAdapters(displayResult.DisplayAdapters ?? []);
+        var cpuGraphics = adapters.FirstOrDefault(IsCpuGraphicsAdapter);
+        var fallbackPrimary = adapters
+            .OrderBy(adapter => IsCpuGraphicsAdapter(adapter) ? 1 : 0)
+            .ThenBy(adapter => adapter.UsesBasicDisplayDriver ? 1 : 0)
+            .ThenBy(adapter => string.IsNullOrWhiteSpace(adapter.DriverVersion) ? 1 : 0)
+            .FirstOrDefault();
+        var primaryDisplay = adapters.FirstOrDefault(adapter => adapter.IsPrimary) ?? fallbackPrimary;
+        var primaryAmdGpu = primaryDisplay is not null && IsAmdAdapter(primaryDisplay) && !IsCpuGraphicsAdapter(primaryDisplay) ? primaryDisplay : null;
+        var amdTarget = primaryAmdGpu ?? cpuGraphics;
+        return new HardwareInfo(
+            amdTarget?.Name, amdTarget?.InstanceId, amdTarget?.DriverVersion, amdTarget?.OriginalInf, amdTarget?.PackageVersion,
+            displayResult.AudioDriverVersion, osResult?.OsName ?? "", osResult?.OsVersion ?? "", osResult?.IsServer ?? false,
+            stateResult?.IsMpoDisabled ?? false, stateResult?.IsUpdateCheckServiceInstalled ?? false, stateResult?.IsAdrenalinInstalled ?? false,
+            adapters, cpuGraphics, cpu, ResolveCpuSupportUrl(cpu), primaryDisplay);
+    }
+
+    private async Task<OsDetectionResult> DetectOsAsync()
+    {
+        var output = await RunPowerShellAsync("""
+            $os = Get-CimInstance Win32_OperatingSystem
+            $windowsVersion = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction SilentlyContinue
+            [pscustomobject]@{
+              OsName=($os.Caption -replace '^Microsoft\s+', '')
+              OsVersion=if ($windowsVersion.CurrentBuildNumber -and $null -ne $windowsVersion.UBR) { "$($windowsVersion.CurrentBuildNumber).$($windowsVersion.UBR)" } else { $os.Version }
+              IsServer=($os.ProductType -ne 1)
+            } | ConvertTo-Json -Compress
+            """);
+        return DeserializeHardwareResult<OsDetectionResult>(output);
+    }
+
+    private async Task<DisplayDetectionResult> DetectDisplayAsync()
+    {
+        var output = await RunPowerShellAsync("""
             $displayClassGuid = '{4d36e968-e325-11ce-bfc1-08002be10318}'
             $gpus = @(Get-CimInstance Win32_PnPEntity |
               Where-Object {
@@ -170,37 +259,45 @@ public sealed class DriverWorkflow : IDisposable
                 UsesBasicDisplayDriver=($gpu.Service -match 'BasicDisplay' -or $gpu.Name -match 'Microsoft Basic Display' -or ($drv.DriverProviderName -match 'Microsoft' -and $drv.InfName -match '^display\.inf$'))
               }
             }
-            $os = Get-CimInstance Win32_OperatingSystem
-            $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
-            $windowsVersion = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction SilentlyContinue
-            $osName = ($os.Caption -replace '^Microsoft\s+', '')
-            $osBuild = if ($windowsVersion.CurrentBuildNumber -and $null -ne $windowsVersion.UBR) { "$($windowsVersion.CurrentBuildNumber).$($windowsVersion.UBR)" } else { $os.Version }
-            $mpoDisabled = $false
-            try { $mpoDisabled = ((Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\Dwm' -ErrorAction SilentlyContinue).OverlayTestMode -eq 5) } catch {}
-            $updateCheckInstalled = $null -ne (Get-ScheduledTask -TaskName 'RadeonPatcher Update Check' -ErrorAction SilentlyContinue)
-            $adrenalinInstalled = Test-Path -LiteralPath 'C:\Program Files\AMD\CNext\CNext\RadeonSoftware.exe'
             [pscustomobject]@{
-              GpuName=$null
-              GpuInstanceId=$null
-              DisplayDriverVersion=$null
-              DisplayDriverOriginalInf=$null
               AudioDriverVersion=if ($hasAmdAudioDriver) { $aud.DriverVersion } else { $null }
-              OsName=$osName
-              OsVersion=$osBuild
-              IsServer=($os.ProductType -ne 1)
-              IsMpoDisabled=$mpoDisabled
-              IsUpdateCheckServiceInstalled=$updateCheckInstalled
-              IsAdrenalinInstalled=$adrenalinInstalled
               DisplayAdapters=@($adapters)
-              CpuName=$cpu.Name
             } | ConvertTo-Json -Compress
             """);
-        var hardware = JsonSerializer.Deserialize<HardwareInfo>(display.Trim(), new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true
-        }) ?? throw new InvalidOperationException("PowerShell returned invalid hardware information.");
+        return DeserializeHardwareResult<DisplayDetectionResult>(output);
+    }
+
+    private async Task<string?> DetectCpuAsync()
+    {
+        var cpuName = await Task.Run(() => Registry.LocalMachine.OpenSubKey(@"HARDWARE\DESCRIPTION\System\CentralProcessor\0")?.GetValue("ProcessorNameString") as string);
+        if (!string.IsNullOrWhiteSpace(cpuName)) return cpuName.Trim();
+        var output = await RunPowerShellAsync("(Get-CimInstance Win32_Processor | Select-Object -First 1 -ExpandProperty Name | ConvertTo-Json -Compress)");
+        return JsonSerializer.Deserialize<string>(output.Trim())?.Trim();
+    }
+
+    private async Task<SystemStateDetectionResult> DetectSystemStateAsync()
+    {
+        var output = await RunPowerShellAsync("""
+            $mpoDisabled = $false
+            try { $mpoDisabled = ((Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\Dwm' -ErrorAction SilentlyContinue).OverlayTestMode -eq 5) } catch {}
+            [pscustomobject]@{
+              IsMpoDisabled=$mpoDisabled
+              IsUpdateCheckServiceInstalled=($null -ne (Get-ScheduledTask -TaskName 'RadeonPatcher Update Check' -ErrorAction SilentlyContinue))
+              IsAdrenalinInstalled=(Test-Path -LiteralPath 'C:\Program Files\AMD\CNext\CNext\RadeonSoftware.exe')
+            } | ConvertTo-Json -Compress
+            """);
+        return DeserializeHardwareResult<SystemStateDetectionResult>(output);
+    }
+
+    private static T DeserializeHardwareResult<T>(string output) => JsonSerializer.Deserialize<T>(output.Trim(), new JsonSerializerOptions
+    {
+        PropertyNameCaseInsensitive = true
+    }) ?? throw new InvalidOperationException("PowerShell returned invalid hardware information.");
+
+    private List<DisplayAdapterInfo> CompleteDisplayAdapters(IReadOnlyList<DisplayAdapterInfo> rawAdapters)
+    {
         var primaryAdapterName = DisplayTopology.GetPrimaryAdapterName();
-        var adapters = (hardware.DisplayAdapters ?? [])
+        return rawAdapters
             .Select(adapter => adapter with
             {
                 VendorId = GetVendorId(adapter.InstanceId),
@@ -213,29 +310,6 @@ public sealed class DriverWorkflow : IDisposable
                     : null
             })
             .ToList();
-        var cpuGraphics = adapters.FirstOrDefault(IsCpuGraphicsAdapter);
-        var fallbackPrimary = adapters
-            .OrderBy(adapter => IsCpuGraphicsAdapter(adapter) ? 1 : 0)
-            .ThenBy(adapter => adapter.UsesBasicDisplayDriver ? 1 : 0)
-            .ThenBy(adapter => string.IsNullOrWhiteSpace(adapter.DriverVersion) ? 1 : 0)
-            .FirstOrDefault();
-        var primaryDisplay = adapters.FirstOrDefault(adapter => adapter.IsPrimary) ?? fallbackPrimary;
-        var primaryAmdGpu = primaryDisplay is not null && IsAmdAdapter(primaryDisplay) && !IsCpuGraphicsAdapter(primaryDisplay)
-            ? primaryDisplay
-            : null;
-        var amdTarget = primaryAmdGpu ?? cpuGraphics;
-        return hardware with
-        {
-            GpuName = amdTarget?.Name,
-            GpuInstanceId = amdTarget?.InstanceId,
-            DisplayDriverVersion = amdTarget?.DriverVersion,
-            DisplayDriverOriginalInf = amdTarget?.OriginalInf,
-            DisplayDriverPackageVersion = amdTarget?.PackageVersion,
-            DisplayAdapters = adapters,
-            CpuGraphicsAdapter = cpuGraphics,
-            CpuSupportUrl = ResolveCpuSupportUrl(hardware.CpuName),
-            PrimaryDisplayAdapter = primaryDisplay
-        };
     }
 
     public string? ResolveSupportUrl(HardwareInfo hardware)
