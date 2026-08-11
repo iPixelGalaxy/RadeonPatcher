@@ -902,23 +902,23 @@ public partial class MainWindow : Window
     private void ApplyTheme()
     {
         var dark = IsDarkTheme();
-        SetThemeBrush("WindowBackgroundBrush", dark ? "#281F20" : "#F9EDEC");
-        SetThemeBrush("PanelBackgroundBrush", dark ? "#332729" : "#FFF9F8");
-        SetThemeBrush("PanelBorderBrush", dark ? "#5A4142" : "#E6C9C6");
-        SetThemeBrush("PrimaryTextBrush", dark ? "#F5ECEC" : "#33201F");
-        SetThemeBrush("SecondaryTextBrush", dark ? "#CDB8B7" : "#735553");
-        SetThemeBrush("InputBackgroundBrush", dark ? "#3C2E30" : "#FFFDFC");
-        SetThemeBrush("InputBorderBrush", dark ? "#745253" : "#D3AAA5");
-        SetThemeBrush("ButtonBackgroundBrush", dark ? "#493537" : "#F4DEDB");
-        SetThemeBrush("ButtonForegroundBrush", dark ? "#F5ECEC" : "#33201F");
-        SetThemeBrush("LogBackgroundBrush", dark ? "#231A1B" : "#FFF8F7");
-        SetThemeBrush("LogForegroundBrush", dark ? "#F3E8E8" : "#33201F");
+        SetThemeBrush("WindowBackgroundBrush", dark ? "#242123" : "#F6F1F2");
+        SetThemeBrush("PanelBackgroundBrush", dark ? "#2F2B2E" : "#FFFCFB");
+        SetThemeBrush("PanelBorderBrush", dark ? "#4F464B" : "#DFD4D7");
+        SetThemeBrush("PrimaryTextBrush", dark ? "#F1EEF0" : "#292529");
+        SetThemeBrush("SecondaryTextBrush", dark ? "#C2BCC1" : "#635A60");
+        SetThemeBrush("InputBackgroundBrush", dark ? "#383338" : "#FFFEFD");
+        SetThemeBrush("InputBorderBrush", dark ? "#675A60" : "#C7B8BB");
+        SetThemeBrush("ButtonBackgroundBrush", dark ? "#423B40" : "#EEE6E8");
+        SetThemeBrush("ButtonForegroundBrush", dark ? "#F4F1F2" : "#292529");
+        SetThemeBrush("LogBackgroundBrush", dark ? "#242124" : "#FFFBFB");
+        SetThemeBrush("LogForegroundBrush", dark ? "#ECE9EC" : "#292529");
         SetThemeBrush("LogoBrush", dark ? "#F05A48" : "#D93626");
         SetThemeBrush("LogoHoverBrush", dark ? "#C94738" : "#B72D20");
-        SetThemeBrush("SelectionBackgroundBrush", dark ? "#614244" : "#F4CFCA");
-        SetThemeBrush("ScrollTrackBrush", dark ? "#231A1B" : "#F1DDDA");
-        SetThemeBrush("ScrollThumbBrush", dark ? "#755254" : "#C99791");
-        SetThemeBrush("ScrollThumbHoverBrush", dark ? "#8A5E60" : "#B87871");
+        SetThemeBrush("SelectionBackgroundBrush", dark ? "#54494F" : "#E8DBDF");
+        SetThemeBrush("ScrollTrackBrush", dark ? "#242124" : "#ECE4E6");
+        SetThemeBrush("ScrollThumbBrush", dark ? "#675A62" : "#B9A6AA");
+        SetThemeBrush("ScrollThumbHoverBrush", dark ? "#7B6A73" : "#A0818B");
     }
 
     private void SetThemeBrush(string key, string color)
@@ -946,8 +946,8 @@ public partial class MainWindow : Window
 
         if (dark)
         {
-            var captionColor = ColorRef(0x33, 0x27, 0x29);
-            var textColor = ColorRef(0xF5, 0xEC, 0xEC);
+            var captionColor = ColorRef(0x2F, 0x2B, 0x2E);
+            var textColor = ColorRef(0xF1, 0xEE, 0xF0);
             _ = DwmSetWindowAttribute(handle, DwmWindowAttribute.CaptionColor, ref captionColor, sizeof(int));
             _ = DwmSetWindowAttribute(handle, DwmWindowAttribute.TextColor, ref textColor, sizeof(int));
         }
