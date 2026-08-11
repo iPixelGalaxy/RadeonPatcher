@@ -494,9 +494,9 @@
                             <TextBlock x:Name="OsText" VerticalAlignment="Center" Text="OS: Detecting..." TextWrapping="Wrap"/>
                         </Border>
                         <TextBlock x:Name="GpuText" Grid.Row="1" Text="Primary Display: Detecting..." TextWrapping="Wrap"/>
-                        <TextBlock x:Name="DisplayDriverText" Grid.Row="2" Margin="0,4,74,0" Foreground="{DynamicResource SecondaryTextBrush}" Text="Installed Video Driver: Detecting..." TextWrapping="Wrap"/>
+                        <TextBlock x:Name="DisplayDriverText" Grid.Row="2" Margin="0,4,42,0" Foreground="{DynamicResource SecondaryTextBrush}" Text="Installed Video Driver: Detecting..." TextWrapping="Wrap"/>
                         <Canvas Grid.Row="2" Margin="0,4,0,0" ClipToBounds="False" Panel.ZIndex="1">
-                            <Button x:Name="RefreshButton" Canvas.Right="40" Canvas.Top="-9" Width="34" Height="34" Padding="0" Click="RefreshButton_Click"
+                            <Button x:Name="RefreshButton" Canvas.Right="8" Canvas.Top="-9" Width="34" Height="34" Padding="0" Click="RefreshButton_Click"
                                     ToolTip="Refresh detected hardware and driver list"
                                     AutomationProperties.Name="Refresh detected hardware and driver list">
                                 <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="16" Text="&#xE72C;"/>
