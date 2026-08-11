@@ -500,10 +500,10 @@
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock x:Name="DisplayDriverText" VerticalAlignment="Center" Foreground="{DynamicResource SecondaryTextBrush}" Text="Installed Video Driver: Detecting..." TextWrapping="Wrap"/>
-                            <Button x:Name="RefreshButton" Grid.Column="1" Width="24" Height="24" Padding="0" Click="RefreshButton_Click"
+                            <Button x:Name="RefreshButton" Grid.Column="1" Width="34" Height="34" Margin="0,0,8,0" Padding="0" Click="RefreshButton_Click"
                                     ToolTip="Refresh detected hardware and driver list"
                                     AutomationProperties.Name="Refresh detected hardware and driver list">
-                                <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="14" Text="&#xE72C;"/>
+                                <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="16" Text="&#xE72C;"/>
                             </Button>
                         </Grid>
                         <Border Grid.Row="3">
