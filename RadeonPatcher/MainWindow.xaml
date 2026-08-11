@@ -7,7 +7,7 @@
         Background="{DynamicResource WindowBackgroundBrush}">
     <Window.Resources>
         <local:ProgressIndicatorWidthConverter x:Key="ProgressIndicatorWidthConverter"/>
-        <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#F7F3F3"/>
+        <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#F9EDEC"/>
         <SolidColorBrush x:Key="PanelBackgroundBrush" Color="#FFFFFF"/>
         <SolidColorBrush x:Key="PanelBorderBrush" Color="#D7DEE7"/>
         <SolidColorBrush x:Key="PrimaryTextBrush" Color="#1F2933"/>
