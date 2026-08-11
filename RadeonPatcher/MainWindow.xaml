@@ -494,11 +494,30 @@
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
-                        <TextBlock x:Name="OsText" VerticalAlignment="Center" TextWrapping="Wrap"/>
-                        <TextBlock x:Name="GpuText" Grid.Row="1" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                        <Border BorderBrush="{DynamicResource PanelBorderBrush}" BorderThickness="0,0,0,1" Padding="0,0,0,4" Margin="0,0,0,3">
+                            <TextBlock x:Name="OsText" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                        </Border>
+                        <TextBlock x:Name="GpuText" Grid.Row="1" TextWrapping="Wrap"/>
                         <TextBlock x:Name="DisplayDriverText" Grid.Row="2" Margin="0,4,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
-                        <TextBlock x:Name="AudioText" Grid.Row="3" Margin="0,4,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
-                        <TextBlock x:Name="CpuGraphicsText" Grid.Row="4" Margin="0,4,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
+                        <Border Grid.Row="3">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="BorderBrush" Value="{DynamicResource PanelBorderBrush}"/>
+                                    <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                                    <Setter Property="Padding" Value="0,0,0,4"/>
+                                    <Setter Property="Margin" Value="0,4,0,3"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Text, ElementName=CpuGraphicsText}" Value="">
+                                            <Setter Property="BorderThickness" Value="0"/>
+                                            <Setter Property="Padding" Value="0"/>
+                                            <Setter Property="Margin" Value="0,4,0,0"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <TextBlock x:Name="AudioText" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
+                        </Border>
+                        <TextBlock x:Name="CpuGraphicsText" Grid.Row="4" TextWrapping="Wrap"/>
                         <Button x:Name="RefreshButton" Grid.Column="1" Grid.RowSpan="5" Width="34" Height="34" Padding="0" Click="RefreshButton_Click"
                                 VerticalAlignment="Top" ToolTip="Refresh detected hardware and driver list"
                                 AutomationProperties.Name="Refresh detected hardware and driver list">
