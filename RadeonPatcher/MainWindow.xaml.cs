@@ -99,13 +99,23 @@ public partial class MainWindow : Window
                 ? "Installed AMD HD Audio Driver: None"
                 : $"Installed AMD HD Audio Driver: {_hardware.AudioDriverVersion}";
             var cpuName = FormatCpuDisplayName(_hardware.CpuName);
-            CpuGraphicsText.Text = _hardware.CpuGraphicsAdapter is { } cpuGraphics
-                ? cpuGraphics.UsesBasicDisplayDriver
-                    ? $"CPU Graphics: {cpuName}{Environment.NewLine}CPU Graphics Status: Enabled, using Microsoft Basic Display Adapter."
-                    : $"CPU Graphics: {cpuName}{Environment.NewLine}CPU Graphics Status: Enabled ({(cpuGraphicsForced ? _settings.LastInstalledCpuGraphicsPackageVersion : cpuGraphics.PackageVersion) ?? cpuGraphics.DriverVersion ?? "AMD driver not installed"})."
-                : !string.IsNullOrWhiteSpace(_hardware.CpuSupportUrl)
-                    ? $"CPU Graphics: {cpuName}{Environment.NewLine}CPU Graphics Status: Disabled in firmware."
-                    : "";
+            if (_hardware.CpuGraphicsAdapter is { } cpuGraphics)
+            {
+                CpuGraphicsNameText.Text = $"CPU Graphics: {cpuName}";
+                CpuGraphicsStatusText.Text = cpuGraphics.UsesBasicDisplayDriver
+                    ? "CPU Graphics Status: Enabled, using Microsoft Basic Display Adapter."
+                    : $"CPU Graphics Status: Enabled ({(cpuGraphicsForced ? _settings.LastInstalledCpuGraphicsPackageVersion : cpuGraphics.PackageVersion) ?? cpuGraphics.DriverVersion ?? "AMD driver not installed"}).";
+            }
+            else if (!string.IsNullOrWhiteSpace(_hardware.CpuSupportUrl))
+            {
+                CpuGraphicsNameText.Text = $"CPU Graphics: {cpuName}";
+                CpuGraphicsStatusText.Text = "CPU Graphics Status: Disabled in firmware.";
+            }
+            else
+            {
+                CpuGraphicsNameText.Text = "";
+                CpuGraphicsStatusText.Text = "";
+            }
 
             UpdateInstallTargetControls();
 

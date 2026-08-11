@@ -495,10 +495,10 @@
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
                         <Border BorderBrush="{DynamicResource PanelBorderBrush}" BorderThickness="0,0,0,1" Padding="0,0,0,4" Margin="0,0,0,3">
-                            <TextBlock x:Name="OsText" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                            <TextBlock x:Name="OsText" VerticalAlignment="Center" Text="OS: Detecting..." TextWrapping="Wrap"/>
                         </Border>
-                        <TextBlock x:Name="GpuText" Grid.Row="1" TextWrapping="Wrap"/>
-                        <TextBlock x:Name="DisplayDriverText" Grid.Row="2" Margin="0,4,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
+                        <TextBlock x:Name="GpuText" Grid.Row="1" Text="Primary Display: Detecting..." TextWrapping="Wrap"/>
+                        <TextBlock x:Name="DisplayDriverText" Grid.Row="2" Margin="0,4,0,0" Foreground="{DynamicResource SecondaryTextBrush}" Text="Installed Video Driver: Detecting..." TextWrapping="Wrap"/>
                         <Border Grid.Row="3">
                             <Border.Style>
                                 <Style TargetType="Border">
@@ -507,7 +507,7 @@
                                     <Setter Property="Padding" Value="0,0,0,4"/>
                                     <Setter Property="Margin" Value="0,4,0,3"/>
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding Text, ElementName=CpuGraphicsText}" Value="">
+                                        <DataTrigger Binding="{Binding Text, ElementName=CpuGraphicsNameText}" Value="">
                                             <Setter Property="BorderThickness" Value="0"/>
                                             <Setter Property="Padding" Value="0"/>
                                             <Setter Property="Margin" Value="0,4,0,0"/>
@@ -515,9 +515,12 @@
                                     </Style.Triggers>
                                 </Style>
                             </Border.Style>
-                            <TextBlock x:Name="AudioText" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
+                            <TextBlock x:Name="AudioText" Foreground="{DynamicResource SecondaryTextBrush}" Text="Installed AMD HD Audio Driver: Detecting..." TextWrapping="Wrap"/>
                         </Border>
-                        <TextBlock x:Name="CpuGraphicsText" Grid.Row="4" TextWrapping="Wrap"/>
+                        <StackPanel Grid.Row="4">
+                            <TextBlock x:Name="CpuGraphicsNameText" Text="CPU Graphics: Detecting..." TextWrapping="Wrap"/>
+                            <TextBlock x:Name="CpuGraphicsStatusText" Foreground="{DynamicResource SecondaryTextBrush}" Text="CPU Graphics Status: Detecting..." TextWrapping="Wrap"/>
+                        </StackPanel>
                         <Button x:Name="RefreshButton" Grid.Column="1" Grid.RowSpan="5" Width="34" Height="34" Padding="0" Click="RefreshButton_Click"
                                 VerticalAlignment="Top" ToolTip="Refresh detected hardware and driver list"
                                 AutomationProperties.Name="Refresh detected hardware and driver list">
