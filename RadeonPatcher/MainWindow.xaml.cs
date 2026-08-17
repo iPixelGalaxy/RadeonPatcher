@@ -461,7 +461,7 @@ public partial class MainWindow : Window
     {
         if (primaryDisplay?.UsesBasicDisplayDriver == true)
         {
-            return "Video Driver: Microsoft Basic";
+            return "Basic Display Adapter";
         }
 
         if (primaryDisplay is not null && !string.Equals(primaryDisplay.InstanceId, hardware.GpuInstanceId, StringComparison.OrdinalIgnoreCase))
