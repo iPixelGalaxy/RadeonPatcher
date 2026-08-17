@@ -93,18 +93,7 @@ public partial class MainWindow : Window
 
             var primaryDisplay = _hardware.PrimaryDisplayAdapter;
             GpuText.Text = FormatGpuList(_hardware);
-            DisplayDriverText.Text = primaryDisplay is not null &&
-                                     !string.Equals(primaryDisplay.InstanceId, _hardware.GpuInstanceId, StringComparison.OrdinalIgnoreCase)
-                ? primaryDisplay.UsesBasicDisplayDriver
-                    ? "Primary Display Driver: Microsoft Basic Display Adapter"
-                    : $"Primary Display Driver: {primaryDisplay.DriverProviderName ?? "Unknown"} {primaryDisplay.DriverVersion ?? "driver unknown"}"
-                : displayForced
-                ? $"Installed Video Driver: {_settings.LastInstalledDisplayPackageVersion ?? "None"}"
-                : _hardware.DisplayDriverPackageVersion is null
-                ? _hardware.DisplayDriverVersion is null
-                    ? "Installed Video Driver: None"
-                    : "Installed Video Driver: Unknown"
-                : $"Installed Video Driver: {_hardware.DisplayDriverPackageVersion}";
+            DisplayDriverText.Text = GetDisplayDriverStatus(_hardware, primaryDisplay, displayForced);
             OsText.Text = $"OS: {_hardware.OsName} ({_hardware.OsVersion})";
             AudioText.Text = audioForced
                 ? $"Installed AMD HD Audio Driver: {_settings.LastInstalledAudioDriverVersion ?? "None"}"
@@ -231,11 +220,7 @@ public partial class MainWindow : Window
         var audioForced = IsForcedVersionCurrent(_settings.LastInstalledAudioDriverAt);
         var primaryDisplay = hardware.PrimaryDisplayAdapter;
         GpuText.Text = FormatGpuList(hardware);
-        DisplayDriverText.Text = primaryDisplay is not null && !string.Equals(primaryDisplay.InstanceId, hardware.GpuInstanceId, StringComparison.OrdinalIgnoreCase)
-            ? primaryDisplay.UsesBasicDisplayDriver ? "Primary Display Driver: Microsoft Basic Display Adapter" : $"Primary Display Driver: {primaryDisplay.DriverProviderName ?? "Unknown"} {primaryDisplay.DriverVersion ?? "driver unknown"}"
-            : displayForced ? $"Installed Video Driver: {_settings.LastInstalledDisplayPackageVersion ?? "None"}"
-            : hardware.DisplayDriverPackageVersion is null ? hardware.DisplayDriverVersion is null ? "Installed Video Driver: None" : "Installed Video Driver: Unknown"
-            : $"Installed Video Driver: {hardware.DisplayDriverPackageVersion}";
+        DisplayDriverText.Text = GetDisplayDriverStatus(hardware, primaryDisplay, displayForced);
         AudioText.Text = audioForced ? $"Installed AMD HD Audio Driver: {_settings.LastInstalledAudioDriverVersion ?? "None"}"
             : hardware.AudioDriverVersion is null ? "Installed AMD HD Audio Driver: None" : $"Installed AMD HD Audio Driver: {hardware.AudioDriverVersion}";
     }
@@ -466,9 +451,33 @@ public partial class MainWindow : Window
         installedAt is not null && DateTimeOffset.UtcNow - installedAt.Value < ForcedVersionDuration;
 
     private string? GetEffectiveDisplayPackageVersion() =>
-        IsForcedVersionCurrent(_settings.LastInstalledDisplayPackageAt)
+        _hardware?.PrimaryDisplayAdapter?.UsesBasicDisplayDriver == true
+            ? null
+            : IsForcedVersionCurrent(_settings.LastInstalledDisplayPackageAt)
             ? _settings.LastInstalledDisplayPackageVersion
             : _hardware?.DisplayDriverPackageVersion;
+
+    private string GetDisplayDriverStatus(HardwareInfo hardware, DisplayAdapterInfo? primaryDisplay, bool displayForced)
+    {
+        if (primaryDisplay?.UsesBasicDisplayDriver == true)
+        {
+            return "Installed Video Driver: Microsoft Basic Display Adapter";
+        }
+
+        if (primaryDisplay is not null && !string.Equals(primaryDisplay.InstanceId, hardware.GpuInstanceId, StringComparison.OrdinalIgnoreCase))
+        {
+            return $"Primary Display Driver: {primaryDisplay.DriverProviderName ?? "Unknown"} {primaryDisplay.DriverVersion ?? "driver unknown"}";
+        }
+
+        if (displayForced)
+        {
+            return $"Installed Video Driver: {_settings.LastInstalledDisplayPackageVersion ?? "None"}";
+        }
+
+        return hardware.DisplayDriverPackageVersion is null
+            ? hardware.DisplayDriverVersion is null ? "Installed Video Driver: None" : "Installed Video Driver: Unknown"
+            : $"Installed Video Driver: {hardware.DisplayDriverPackageVersion}";
+    }
 
     private string? GetEffectiveCpuGraphicsPackageVersion() =>
         _hardware?.CpuGraphicsAdapter is { UsesBasicDisplayDriver: true }

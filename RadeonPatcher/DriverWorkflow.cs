@@ -305,7 +305,7 @@ public sealed class DriverWorkflow : IDisposable
                 Name = IsAmdAdapter(adapter)
                     ? GpuModelDatabase.ResolveName(adapter.InstanceId, adapter.Name)
                     : adapter.Name?.Trim(),
-                PackageVersion = IsAmdAdapter(adapter)
+                PackageVersion = IsAmdAdapter(adapter) && !adapter.UsesBasicDisplayDriver
                     ? ResolvePackageVersion(adapter.InstanceId, adapter.DriverVersion, adapter.OriginalInf)
                     : null
             })
@@ -1051,7 +1051,7 @@ public sealed class DriverWorkflow : IDisposable
 
     private string? ResolvePackageVersion(string? instanceId, string? driverVersion, string? originalInf)
     {
-        if (string.IsNullOrWhiteSpace(instanceId) || string.IsNullOrWhiteSpace(driverVersion))
+        if (string.IsNullOrWhiteSpace(instanceId) || string.IsNullOrWhiteSpace(driverVersion) || string.IsNullOrWhiteSpace(originalInf))
         {
             return null;
         }
@@ -1067,11 +1067,6 @@ public sealed class DriverWorkflow : IDisposable
         if (receipt is not null)
         {
             return receipt.PackageVersion;
-        }
-
-        if (string.IsNullOrWhiteSpace(originalInf))
-        {
-            return null;
         }
 
         var packageMap = DriverPackageMapStore.Load()
