@@ -667,7 +667,7 @@ public sealed class DriverWorkflow : IDisposable
         foreach (var package in packages)
         {
             log($"Removing AMD {componentName} driver package: {package}");
-            await RunProcessAsync("pnputil.exe", $"/delete-driver {package} /uninstall /force", log, allowAlreadyRemoved: true);
+            await RunProcessAsync("pnputil.exe", $"/delete-driver {package} /uninstall", log, allowAlreadyRemoved: true);
         }
     }
 
@@ -1258,6 +1258,7 @@ public sealed class DriverWorkflow : IDisposable
         {
             log($"Installing Adrenalin MSI: {msi}");
             await RunProcessAsync("msiexec.exe", $"/i \"{msi}\" /qn /norestart", log);
+            log("AMD Software: Adrenalin Edition installed.");
             await RestoreAdrenalinSettingsAsync(log);
             return;
         }
