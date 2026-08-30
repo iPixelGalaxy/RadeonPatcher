@@ -914,7 +914,7 @@ public partial class MainWindow : Window
         var options = GetPatchOptions();
         if (!options.Enabled)
         {
-            AdvancedPatchesSummaryText.Text = "AMD defaults; no advanced patches selected.";
+            AdvancedPatchesButton.ToolTip = "AMD defaults; no advanced patches selected.";
             return;
         }
 
@@ -924,7 +924,7 @@ public partial class MainWindow : Window
         if (options.EnableLegacyRebarInfSupport) enabled.Add("legacy ReBAR INF");
         if (options.UseHybridDriver) enabled.Add("hybrid user-mode components");
         if (options.HasRuntimeTweaks) enabled.Add("runtime overrides");
-        AdvancedPatchesSummaryText.Text = enabled.Count == 0
+        AdvancedPatchesButton.ToolTip = enabled.Count == 0
             ? "Advanced patching enabled; all options use AMD defaults."
             : $"Enabled: {string.Join(", ", enabled)}.";
     }
@@ -987,6 +987,7 @@ public partial class MainWindow : Window
         ClearDownloadCacheButton.IsEnabled = !busy && _hasDownloadCache;
         ThemeCombo.IsEnabled = !busy;
         AboutButton.IsEnabled = true;
+        AdvancedPatchesButton.IsEnabled = !busy;
         InstallButton.IsEnabled = !busy;
         ToggleMpoButton.IsEnabled = !busy;
         UpdateCheckServiceButton.IsEnabled = !busy;
