@@ -528,7 +528,8 @@
                 </Border>
 
                 <Border Grid.Row="1" Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource PanelBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14">
-                <StackPanel>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel Margin="0,0,6,0">
                     <StackPanel x:Name="DriverSourcePanel" Visibility="Collapsed">
                         <TextBlock FontWeight="SemiBold" Text="Driver source"/>
                         <TextBlock x:Name="SourceSummaryText" Margin="0,10,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
@@ -567,6 +568,8 @@
                             <CheckBox x:Name="ServerCompatCheck" Content="Enable Windows Server Compatibility"/>
                             <TextBlock Text=" (?)" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" Cursor="Help" ToolTip="Standard AMD Drivers only support Workstation editions with the .1 flag, while Server is .3. The driver works perfectly, unsure why AMD made this choice."/>
                         </StackPanel>
+                        <Button x:Name="AdvancedPatchesButton" Height="34" Margin="0,0,0,5" Content="Advanced Driver Patches" Click="AdvancedPatchesButton_Click"/>
+                        <TextBlock x:Name="AdvancedPatchesSummaryText" Margin="0,0,0,10" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
                         <CheckBox x:Name="AdrenalinCheck" Content="Install AMD Software: Adrenalin Edition" IsChecked="True" Margin="0,0,0,10"/>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                             <CheckBox x:Name="AudioCheck" Content="Install Latest AMD HD Audio Driver"/>
@@ -585,6 +588,7 @@
                         <Button x:Name="UninstallAllButton" Height="34" Content="Uninstall All Drivers &amp; AMD Software" Click="UninstallAllButton_Click"/>
                     </StackPanel>
                 </StackPanel>
+                </ScrollViewer>
             </Border>
             </Grid>
 

@@ -93,7 +93,8 @@ public sealed record InstallRequest(
     bool InstallAdrenalin,
     bool ReplaceAdrenalin,
     AudioInstallSource AudioInstallSource,
-    bool AutoClearDownloadedCache);
+    bool AutoClearDownloadedCache,
+    DriverPatchOptions PatchOptions);
 
 public sealed record UpdateCheckResult(
     bool UpdateAvailable,
@@ -467,31 +468,54 @@ public sealed class DriverWorkflow : IDisposable
                 cpuPackageRoot = await ExtractPackageAsync(cpuPackageExe, log);
             }
 
+            DriverRelease? modernDriver = null;
+            string? modernPackageRoot = null;
+            if (request.PatchOptions.Enabled && request.PatchOptions.UseHybridDriver)
+            {
+                log($"Loading modern user-mode driver from {request.PatchOptions.ModernDriverSupportUrl}");
+                var modernDrivers = await GetAvailableDriversAsync(request.PatchOptions.ModernDriverSupportUrl, log);
+                modernDriver = modernDrivers.FirstOrDefault()
+                    ?? throw new InvalidOperationException("No modern AMD driver was found for the hybrid package source.");
+                log($"Preparing modern user-mode components from {modernDriver.VersionText}.");
+                var modernPackageExe = await DownloadDriverAsync(modernDriver, false, log, downloadProgress);
+                modernPackageRoot = await ExtractPackageAsync(modernPackageExe, log);
+            }
+
             if (request.InstallPrimaryGpuDriver)
             {
                 if (packageRoot is null) throw new InvalidOperationException("Primary GPU package was not prepared.");
-                _ = FindDisplayInf(packageRoot, request.Hardware.GpuInstanceId);
-                await InstallDisplayDriverAsync(packageRoot, request.Hardware.GpuInstanceId, request.EnableServerCompatibility, request.Driver.Primary, log);
-                primaryGpuPackageVersion = request.Driver.VersionText;
+                var installRoot = modernPackageRoot is null
+                    ? packageRoot
+                    : BuildHybridPackage(packageRoot, modernPackageRoot, request.Hardware.GpuInstanceId, "primary", log);
+                var installedDriver = modernDriver ?? request.Driver.Primary;
+                _ = FindDisplayInf(installRoot, request.Hardware.GpuInstanceId);
+                await InstallDisplayDriverAsync(installRoot, request.Hardware.GpuInstanceId, request.EnableServerCompatibility, request.PatchOptions, installedDriver, log);
+                primaryGpuPackageVersion = installedDriver.VersionText;
             }
             if (request.InstallCpuGraphicsDriver && request.Hardware.CpuGraphicsAdapter is not null)
             {
                 var cpuRoot = cpuGraphicsIsPrimaryTarget ? packageRoot : cpuPackageRoot;
                 var cpuDriver = request.Driver.CpuGraphics ?? request.Driver.Primary;
                 if (cpuRoot is null) throw new InvalidOperationException("CPU graphics package was not prepared.");
-                _ = FindDisplayInf(cpuRoot, request.Hardware.CpuGraphicsAdapter.InstanceId);
-                await InstallDisplayDriverAsync(cpuRoot, request.Hardware.CpuGraphicsAdapter.InstanceId, request.EnableServerCompatibility, cpuDriver, log);
-                cpuGraphicsPackageVersion = cpuDriver.VersionText;
+                var installRoot = modernPackageRoot is null
+                    ? cpuRoot
+                    : BuildHybridPackage(cpuRoot, modernPackageRoot, request.Hardware.CpuGraphicsAdapter.InstanceId, "cpu-graphics", log);
+                var installedDriver = modernDriver ?? cpuDriver;
+                _ = FindDisplayInf(installRoot, request.Hardware.CpuGraphicsAdapter.InstanceId);
+                await InstallDisplayDriverAsync(installRoot, request.Hardware.CpuGraphicsAdapter.InstanceId, request.EnableServerCompatibility, request.PatchOptions, installedDriver, log);
+                cpuGraphicsPackageVersion = installedDriver.VersionText;
             }
             if (request.InstallAdrenalin)
             {
-                if (packageRoot is null) throw new InvalidOperationException("AMD Software package was not prepared.");
-                await InstallAdrenalinAsync(packageRoot, request.ReplaceAdrenalin, log);
+                var softwareRoot = modernPackageRoot ?? packageRoot;
+                if (softwareRoot is null) throw new InvalidOperationException("AMD Software package was not prepared.");
+                await InstallAdrenalinAsync(softwareRoot, request.ReplaceAdrenalin, log);
             }
             if (request.AudioInstallSource == AudioInstallSource.DriverPackage)
             {
-                if (packageRoot is null) throw new InvalidOperationException("AMD HD Audio package was not prepared.");
-                audioDriverVersion = await InstallPackageAudioAsync(packageRoot, request.EnableServerCompatibility, log);
+                var audioRoot = modernPackageRoot ?? packageRoot;
+                if (audioRoot is null) throw new InvalidOperationException("AMD HD Audio package was not prepared.");
+                audioDriverVersion = await InstallPackageAudioAsync(audioRoot, request.EnableServerCompatibility, log);
             }
         }
 
@@ -997,23 +1021,31 @@ public sealed class DriverWorkflow : IDisposable
         return destination;
     }
 
-    private async Task InstallDisplayDriverAsync(string packageRoot, string? instanceId, bool serverCompatibility, DriverRelease driver, Action<string> log)
+    private async Task InstallDisplayDriverAsync(
+        string packageRoot,
+        string? instanceId,
+        bool serverCompatibility,
+        DriverPatchOptions patchOptions,
+        DriverRelease driver,
+        Action<string> log)
     {
         var displayInf = FindDisplayInf(packageRoot, instanceId);
-        if (!serverCompatibility)
+        if (!serverCompatibility && !patchOptions.RequiresInfPatch && !(patchOptions.Enabled && patchOptions.UseHybridDriver))
         {
             log($"Installing display driver INF: {displayInf}");
             await StageAndForceInstallDisplayDriverAsync(displayInf, instanceId, log);
+            ApplyDriverRegistryOverrides(instanceId, patchOptions, log);
             RecordInstalledDriver(instanceId, driver, displayInf, log);
             return;
         }
 
         var patchDirectory = CopyPackageDirectory(displayInf, "display");
         var patchedInf = Path.Combine(patchDirectory, Path.GetFileName(displayInf));
-        PatchDisplayInf(patchedInf, instanceId, log);
+        PatchDisplayInf(patchedInf, instanceId, serverCompatibility, patchOptions, log);
         await SignPackageAsync(patchDirectory, patchedInf, log);
         log($"Installing patched display driver INF: {patchedInf}");
         await StageAndForceInstallDisplayDriverAsync(patchedInf, instanceId, log);
+        ApplyDriverRegistryOverrides(instanceId, patchOptions, log);
         RecordInstalledDriver(instanceId, driver, patchedInf, log);
     }
 
@@ -1271,6 +1303,80 @@ public sealed class DriverWorkflow : IDisposable
             .FirstOrDefault() ?? throw new InvalidOperationException($"No AMD display INF compatible with {hardwareId ?? "the selected adapter"} was found under {packageRoot}.");
     }
 
+    private string BuildHybridPackage(string donorPackageRoot, string modernPackageRoot, string? instanceId, string label, Action<string> log)
+    {
+        var donorInf = FindDisplayInf(donorPackageRoot, instanceId);
+        var modernInf = FindModernDisplayInf(modernPackageRoot);
+        var hybridRoot = CopyPackageDirectory(donorInf, $"hybrid-{label}");
+        var hybridInf = Path.Combine(hybridRoot, Path.GetFileName(donorInf));
+        var donorPayload = FindUserModePayloadDirectory(hybridInf);
+        var modernPayload = FindUserModePayloadDirectory(modernInf);
+
+        var copied = 0;
+        var replaced = 0;
+        foreach (var source in Directory.EnumerateFiles(modernPayload, "*", SearchOption.AllDirectories))
+        {
+            if (!IsHybridUserModePayload(source)) continue;
+            var relative = Path.GetRelativePath(modernPayload, source);
+            var destination = Path.Combine(donorPayload, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            if (File.Exists(destination)) replaced++;
+            File.Copy(source, destination, true);
+            copied++;
+        }
+
+        if (copied == 0 || replaced == 0)
+        {
+            throw new InvalidOperationException("No matching modern AMD user-mode payload files were found for the selected legacy package.");
+        }
+
+        log($"Built experimental hybrid payload: copied {copied} modern user-mode files ({replaced} replaced) while preserving the selected AMD kernel and INF.");
+        return hybridRoot;
+    }
+
+    private static string FindModernDisplayInf(string packageRoot)
+    {
+        return Directory.EnumerateFiles(packageRoot, "*.inf", SearchOption.AllDirectories)
+            .Select(path => new { Path = path, Text = File.ReadAllText(path), Length = new FileInfo(path).Length })
+            .Where(item => item.Text.Contains("Class=Display", StringComparison.OrdinalIgnoreCase) &&
+                           item.Text.Contains(@"PCI\VEN_1002", StringComparison.OrdinalIgnoreCase) &&
+                           (item.Text.Contains("UserModeDriverName", StringComparison.OrdinalIgnoreCase) ||
+                            item.Text.Contains("amdxx64.dll", StringComparison.OrdinalIgnoreCase)))
+            .OrderByDescending(item => item.Length)
+            .Select(item => item.Path)
+            .FirstOrDefault() ?? throw new InvalidOperationException("No AMD display INF with user-mode components was found in the modern driver package.");
+    }
+
+    private static string FindUserModePayloadDirectory(string infPath)
+    {
+        var infDirectory = Path.GetDirectoryName(infPath)!;
+        var text = File.ReadAllText(infPath);
+        foreach (Match match in Regex.Matches(text, @"\\(?<folder>B[0-9A-Za-z_-]+)\\(?:amdxx|amdxn|atio6|atiogl|amdocl|amd-vulkan)", RegexOptions.IgnoreCase))
+        {
+            var candidate = Path.Combine(infDirectory, match.Groups["folder"].Value);
+            if (Directory.Exists(candidate)) return candidate;
+        }
+
+        return Directory.EnumerateDirectories(infDirectory, "B*", SearchOption.AllDirectories)
+            .Where(directory => Directory.EnumerateFiles(directory, "*.dll", SearchOption.TopDirectoryOnly)
+                .Any(file => Path.GetFileName(file).StartsWith("amdxx", StringComparison.OrdinalIgnoreCase) ||
+                             Path.GetFileName(file).StartsWith("amdxn", StringComparison.OrdinalIgnoreCase) ||
+                             Path.GetFileName(file).StartsWith("atio6", StringComparison.OrdinalIgnoreCase)))
+            .OrderByDescending(directory => Directory.EnumerateFiles(directory, "*", SearchOption.TopDirectoryOnly).Count())
+            .FirstOrDefault() ?? throw new InvalidOperationException($"Could not locate the AMD user-mode payload referenced by {Path.GetFileName(infPath)}.");
+    }
+
+    private static bool IsHybridUserModePayload(string path)
+    {
+        return Path.GetExtension(path).ToLowerInvariant() switch
+        {
+            ".dll" or ".json" or ".bin" or ".blb" or ".dat" or ".sbin" or ".stz" or ".ctz" or
+            ".itz" or ".fatbin" or ".hipfb" or ".xclbin" or ".cap" or ".so" or ".h" or ".lib" or
+            ".xml" or ".txt" => true,
+            _ => false
+        };
+    }
+
     private string CopyPackageDirectory(string infPath, string label)
     {
         var source = Path.GetDirectoryName(infPath)!;
@@ -1284,22 +1390,32 @@ public sealed class DriverWorkflow : IDisposable
         return destination;
     }
 
-    private static void PatchDisplayInf(string infPath, string? instanceId, Action<string> log)
+    private static void PatchDisplayInf(
+        string infPath,
+        string? instanceId,
+        bool serverCompatibility,
+        DriverPatchOptions patchOptions,
+        Action<string> log)
     {
         var lines = File.ReadAllLines(infPath).ToList();
-        var changed = AddCompatibleManufacturerSections(lines, log);
+        var changed = serverCompatibility && AddCompatibleManufacturerSections(lines, log);
         var exactHardwareId = ExtractExactHardwareId(instanceId);
         if (!string.IsNullOrWhiteSpace(exactHardwareId) && !string.Join('\n', lines).Contains(exactHardwareId, StringComparison.OrdinalIgnoreCase))
         {
             var compatibleId = Regex.Match(exactHardwareId, @"PCI\\VEN_1002&DEV_[^&\\]+", RegexOptions.IgnoreCase).Value;
-            var templateIndex = lines.FindIndex(l => l.Contains(compatibleId, StringComparison.OrdinalIgnoreCase) && l.TrimStart().StartsWith("\"%"));
-            if (templateIndex >= 0 && Regex.Match(lines[templateIndex], "^\\s*\"(?<name>%[^%]+%)\"\\s*=\\s*(?<section>[^,]+),").Success is true)
+            var templateIndex = lines.FindIndex(l => l.Contains(compatibleId, StringComparison.OrdinalIgnoreCase) && l.TrimStart().StartsWith("\""));
+            if (templateIndex >= 0 && Regex.Match(lines[templateIndex], "^\\s*\"(?<name>[^\"]+)\"\\s*=\\s*(?<section>[^,]+),").Success is true)
             {
-                var match = Regex.Match(lines[templateIndex], "^\\s*\"(?<name>%[^%]+%)\"\\s*=\\s*(?<section>[^,]+),");
+                var match = Regex.Match(lines[templateIndex], "^\\s*\"(?<name>[^\"]+)\"\\s*=\\s*(?<section>[^,]+),");
                 lines.Insert(templateIndex + 1, $"\"{match.Groups["name"].Value}\" = {match.Groups["section"].Value.Trim()}, {exactHardwareId}");
                 changed = true;
                 log($"Added exact hardware ID: {exactHardwareId}");
             }
+        }
+
+        if (patchOptions.RequiresInfPatch)
+        {
+            changed |= AddInfFeatureOverrides(lines, exactHardwareId, patchOptions, log);
         }
 
         if (changed)
@@ -1307,6 +1423,82 @@ public sealed class DriverWorkflow : IDisposable
             File.Copy(infPath, infPath + ".bak", true);
             File.WriteAllLines(infPath, lines, Encoding.ASCII);
         }
+    }
+
+    private static bool AddInfFeatureOverrides(List<string> lines, string? hardwareId, DriverPatchOptions options, Action<string> log)
+    {
+        var installSection = FindTargetInstallSection(lines, hardwareId);
+        if (installSection is null)
+        {
+            throw new InvalidOperationException("Could not locate the target GPU install section for advanced INF patches.");
+        }
+
+        const string overrideSection = "RadeonPatcher.FeatureOverrides";
+        var sectionStart = lines.FindIndex(line =>
+            string.Equals(line.Trim(), $"[{installSection}]", StringComparison.OrdinalIgnoreCase));
+        if (sectionStart < 0)
+        {
+            sectionStart = lines.FindIndex(line =>
+                line.TrimStart().StartsWith($"[{installSection}.", StringComparison.OrdinalIgnoreCase) &&
+                !line.Contains(".Services]", StringComparison.OrdinalIgnoreCase) &&
+                !line.Contains(".HW]", StringComparison.OrdinalIgnoreCase));
+        }
+        if (sectionStart < 0)
+        {
+            throw new InvalidOperationException($"AMD INF install section [{installSection}] was not found.");
+        }
+
+        lines.Insert(sectionStart + 1, $"AddReg = {overrideSection}");
+        lines.Add("");
+        lines.Add($"[{overrideSection}]");
+        if (options.DisableAnalytics)
+        {
+            lines.Add("HKR,,ReportAnalytics,0x00010001,0");
+            lines.Add("HKR,,eRecordEnable,0x00010001,0");
+            lines.Add("HKR,,BugReportTool_Hide,0x00000000,\"true\"");
+            lines.Add("HKR,,Notify_DriverUpdate_hide,0x00000000,\"true\"");
+            lines.Add("HKR,,ProblemReportUrl,0x00000000,\"hide\"");
+            lines.Add("HKR,,HelpUrl,0x00000000,\"hide\"");
+        }
+        if (options.EnableFeatureOverrides)
+        {
+            lines.Add("HKR,,KMD_RadeonUpscalingSupport,0x00010001,1");
+            lines.Add("HKR,,KMD_VideoUpscaleSupport,0x00010001,1");
+            lines.Add("HKR,,KMD_DeLagNextSupport,0x00010001,1");
+            lines.Add("HKR,,DrvFrameGenEnabled,0x00000001,01,00,00,00");
+        }
+        if (options.EnableLegacyRebarInfSupport)
+        {
+            lines.Add("HKR,,KMD_RebarControlSupport,0x00010001,1");
+            lines.Add("HKR,,KMD_EnableReBarForLegacyASIC,0x00010001,1");
+        }
+
+        log($"Added advanced INF overrides to [{installSection}].");
+        return true;
+    }
+
+    private static string? FindTargetInstallSection(List<string> lines, string? hardwareId)
+    {
+        if (string.IsNullOrWhiteSpace(hardwareId)) return null;
+        var compatibleId = Regex.Match(hardwareId, @"PCI\\VEN_1002&DEV_[^&\\]+", RegexOptions.IgnoreCase).Value;
+        string? compatibleSection = null;
+        foreach (var line in lines)
+        {
+            var match = Regex.Match(line,
+                "^\\s*\"[^\"]+\"\\s*=\\s*(?<section>[^,]+),\\s*(?<id>PCI\\\\VEN_1002&DEV_[^\\s;]+)",
+                RegexOptions.IgnoreCase);
+            if (!match.Success) continue;
+            var entryId = match.Groups["id"].Value;
+            if (string.Equals(entryId, hardwareId, StringComparison.OrdinalIgnoreCase))
+            {
+                return match.Groups["section"].Value.Trim();
+            }
+            if (string.Equals(entryId, compatibleId, StringComparison.OrdinalIgnoreCase))
+            {
+                compatibleSection = match.Groups["section"].Value.Trim();
+            }
+        }
+        return compatibleSection;
     }
 
     private static void PatchGenericAmdInf(string infPath, Action<string> log)
@@ -1534,6 +1726,183 @@ public sealed class DriverWorkflow : IDisposable
     private static Version VersionKey(string version)
     {
         return Version.TryParse(Regex.Match(version, @"\d+(\.\d+)+").Value, out var parsed) ? parsed : new Version(0, 0);
+    }
+
+    public Task ApplyRuntimeTweaksAsync(HardwareInfo hardware, DriverPatchOptions options, Action<string> log)
+    {
+        if (!options.Enabled)
+        {
+            log("Advanced driver patches are disabled; restoring AMD and Windows runtime defaults.");
+            options = options with
+            {
+                Enabled = true,
+                RebarMode = RebarOverrideMode.Default,
+                HardwareSchedulingMode = ToggleOverrideMode.Default,
+                HardwareFlipQueueMode = HardwareFlipQueueMode.Default,
+                ShaderCacheMode = ShaderCacheOverrideMode.Default
+            };
+        }
+
+        var adapters = (hardware.DisplayAdapters ?? [])
+            .Where(IsAmdAdapter)
+            .Where(adapter => !string.IsNullOrWhiteSpace(adapter.InstanceId))
+            .ToList();
+        if (adapters.Count == 0 && !string.IsNullOrWhiteSpace(hardware.GpuInstanceId))
+        {
+            ApplyDriverRegistryOverrides(hardware.GpuInstanceId, options, log);
+            return Task.CompletedTask;
+        }
+
+        foreach (var adapter in adapters)
+        {
+            ApplyDriverRegistryOverrides(adapter.InstanceId, options, log);
+        }
+        return Task.CompletedTask;
+    }
+
+    private static void ApplyDriverRegistryOverrides(string? instanceId, DriverPatchOptions options, Action<string> log)
+    {
+        if (!options.Enabled || string.IsNullOrWhiteSpace(instanceId)) return;
+        var classPath = ResolveDisplayClassRegistryPath(instanceId);
+        if (classPath is null)
+        {
+            log($"Could not resolve the installed driver registry key for {instanceId}; runtime overrides were skipped.");
+            return;
+        }
+
+        using var driverKey = Registry.LocalMachine.CreateSubKey(classPath, true)
+            ?? throw new InvalidOperationException($"Could not open HKLM\\{classPath}.");
+        ApplyRebarOverride(driverKey, options.RebarMode);
+        ApplyHardwareSchedulingOverride(driverKey, options.HardwareSchedulingMode);
+        ApplyHardwareFlipOverride(driverKey, options.HardwareFlipQueueMode);
+        ApplyShaderCacheOverride(driverKey, options.ShaderCacheMode);
+        log($"Applied runtime driver overrides to {instanceId}.");
+    }
+
+    private static string? ResolveDisplayClassRegistryPath(string instanceId)
+    {
+        if (!instanceId.StartsWith(@"PCI\", StringComparison.OrdinalIgnoreCase)) return null;
+        using var enumKey = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Enum\" + instanceId);
+        var driverPath = enumKey?.GetValue("Driver") as string;
+        return Regex.IsMatch(driverPath ?? "", @"^\{[0-9A-F-]{36}\}\\\d{4}$", RegexOptions.IgnoreCase)
+            ? @"SYSTEM\CurrentControlSet\Control\Class\" + driverPath
+            : null;
+    }
+
+    private static void ApplyRebarOverride(RegistryKey key, RebarOverrideMode mode)
+    {
+        foreach (var name in new[] { "KMD_RebarControlMode", "KMD_RebarControlSupport", "KMD_EnableReBarForLegacyASIC", "KMD_RebarEGPUSupport" })
+        {
+            key.DeleteValue(name, false);
+        }
+        if (mode == RebarOverrideMode.Default) return;
+        var enabled = mode == RebarOverrideMode.Disabled ? 0 : 1;
+        key.SetValue("KMD_RebarControlMode", enabled, RegistryValueKind.DWord);
+        key.SetValue("KMD_RebarControlSupport", enabled, RegistryValueKind.DWord);
+        key.SetValue("KMD_EnableReBarForLegacyASIC", mode == RebarOverrideMode.ForcedLegacy ? 1 : 0, RegistryValueKind.DWord);
+        key.SetValue("KMD_RebarEGPUSupport", 0, RegistryValueKind.DWord);
+    }
+
+    private static void ApplyHardwareSchedulingOverride(RegistryKey driverKey, ToggleOverrideMode mode)
+    {
+        using var graphicsDrivers = Registry.LocalMachine.CreateSubKey(@"SYSTEM\CurrentControlSet\Control\GraphicsDrivers", true);
+        SetDwordOrDelete(graphicsDrivers, "HwSchMode", mode switch
+        {
+            ToggleOverrideMode.Disabled => 1,
+            ToggleOverrideMode.Enabled => 2,
+            _ => null
+        });
+
+        SetDwordOrDelete(driverKey, "KMD_EnableMSHWS", mode switch
+        {
+            ToggleOverrideMode.Disabled => 0,
+            ToggleOverrideMode.Enabled => 2,
+            _ => null
+        });
+        SetDwordOrDelete(driverKey, "HwSchMode", mode switch
+        {
+            ToggleOverrideMode.Disabled => 0,
+            ToggleOverrideMode.Enabled => 2,
+            _ => null
+        });
+        SetStringOrDelete(driverKey, @"UMD", "HwSchMode", mode switch
+        {
+            ToggleOverrideMode.Disabled => "0",
+            ToggleOverrideMode.Enabled => "2",
+            _ => null
+        });
+    }
+
+    private static void ApplyHardwareFlipOverride(RegistryKey driverKey, HardwareFlipQueueMode mode)
+    {
+        SetDwordOrDelete(driverKey, "KmdEnableHwFlipQueue", mode switch
+        {
+            HardwareFlipQueueMode.Disabled => 0,
+            HardwareFlipQueueMode.Mode1 => 1,
+            HardwareFlipQueueMode.Mode2 => 2,
+            _ => null
+        });
+    }
+
+    private static void ApplyShaderCacheOverride(RegistryKey driverKey, ShaderCacheOverrideMode mode)
+    {
+        var value = mode switch
+        {
+            ShaderCacheOverrideMode.Disabled => "0",
+            ShaderCacheOverrideMode.Enabled => "2",
+            _ => null
+        };
+        var notAvailable = mode switch
+        {
+            ShaderCacheOverrideMode.Disabled => "1",
+            ShaderCacheOverrideMode.Enabled => "0",
+            _ => null
+        };
+
+        SetStringOrDelete(driverKey, null, "ShaderCache", value);
+        SetStringOrDelete(driverKey, null, "ShaderCache_NA", notAvailable);
+        foreach (var subKey in new[] { "UMD", @"UMD\DXX", @"UMD\DXC" })
+        {
+            SetStringOrDelete(driverKey, subKey, "ShaderCache", value);
+            SetStringOrDelete(driverKey, subKey, "ShaderCache_NA", notAvailable);
+        }
+
+        using var openGl = mode == ShaderCacheOverrideMode.Default
+            ? driverKey.OpenSubKey(@"OpenGL\Private", true)
+            : driverKey.CreateSubKey(@"OpenGL\Private", true);
+        SetDwordOrDelete(openGl, "ShaderCache", mode switch
+        {
+            ShaderCacheOverrideMode.Disabled => 0,
+            ShaderCacheOverrideMode.Enabled => 2,
+            _ => null
+        });
+        if (openGl is not null)
+        {
+            if (notAvailable is null) openGl.DeleteValue("ShaderCache_NA", false);
+            else openGl.SetValue("ShaderCache_NA", notAvailable, RegistryValueKind.String);
+        }
+    }
+
+    private static void SetDwordOrDelete(RegistryKey? key, string name, int? value)
+    {
+        if (key is null) return;
+        if (value.HasValue) key.SetValue(name, value.Value, RegistryValueKind.DWord);
+        else key.DeleteValue(name, false);
+    }
+
+    private static void SetStringOrDelete(RegistryKey root, string? subKeyName, string name, string? value)
+    {
+        if (subKeyName is null)
+        {
+            if (value is null) root.DeleteValue(name, false);
+            else root.SetValue(name, value, RegistryValueKind.String);
+            return;
+        }
+
+        using var key = value is null ? root.OpenSubKey(subKeyName, true) : root.CreateSubKey(subKeyName, true);
+        if (key is null) return;
+        if (value is null) key.DeleteValue(name, false);
+        else key.SetValue(name, value, RegistryValueKind.String);
     }
 
     private static void SetMpoState(bool disable)

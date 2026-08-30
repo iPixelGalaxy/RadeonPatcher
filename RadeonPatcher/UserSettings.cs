@@ -10,6 +10,16 @@ public sealed class UserSettings
     public bool InstallAdrenalin { get; set; } = true;
     public bool InstallAudioDriver { get; set; } = true;
     public bool AutoClearDownloadedCache { get; set; } = true;
+    public bool EnableAdvancedPatches { get; set; }
+    public bool DisableDriverAnalytics { get; set; }
+    public bool EnableDriverFeatureOverrides { get; set; }
+    public bool EnableLegacyRebarInfSupport { get; set; }
+    public bool UseHybridDriver { get; set; }
+    public string ModernDriverSupportUrl { get; set; } = DriverPatchOptions.DefaultModernDriverSupportUrl;
+    public RebarOverrideMode RebarMode { get; set; }
+    public ToggleOverrideMode HardwareSchedulingMode { get; set; }
+    public HardwareFlipQueueMode HardwareFlipQueueMode { get; set; }
+    public ShaderCacheOverrideMode ShaderCacheMode { get; set; }
     public string? CustomSupportUrl { get; set; }
     public string? CustomCpuSupportUrl { get; set; }
     public string? SelectedDriverVersion { get; set; }

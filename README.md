@@ -17,6 +17,9 @@ This project is not affiliated with, endorsed by, sponsored by, or supported by 
 - Loads current and previous driver releases from the GPU's AMD support page.
 - Updates, downgrades, or reinstalls the selected display driver. Systems with Radeon RX plus AMD CPU graphics use matching driver versions from both AMD support pages.
 - Patches and locally signs display and audio catalogs when compatibility changes are required.
+- Optionally patches display INFs to disable AMD analytics and update prompts, expose supported feature flags, and enable legacy Resizable BAR capability flags.
+- Applies reversible per-adapter Resizable BAR, hardware GPU scheduling, hardware flip queue, and shader cache overrides.
+- Can build an experimental hybrid package that preserves a selected legacy AMD kernel while overlaying matching user-mode components from the latest modern AMD package.
 - Adds Windows Server INF compatibility automatically on Server editions.
 - Installs, updates, downgrades, reinstalls, or removes AMD Software: Adrenalin Edition.
 - Backs up Adrenalin preferences before removal and restores them after installation.
@@ -64,5 +67,9 @@ The published executable is written to the repository root as `RadeonPatcher.exe
 ## Notes
 
 RadeonPatcher requires administrator rights for driver installation, certificate trust, scheduled-task registration, and component removal. Review selected options before changing installed drivers.
+
+Advanced driver patches are disabled by default. Hybrid packages are intended for experienced Polaris and Vega users and require hardware validation; user-mode and kernel interfaces can change between AMD releases. RadeonPatcher builds hybrids only from AMD packages downloaded at runtime and does not bundle Radeon-ID executables, drivers, registry files, or other third-party payloads.
+
+The advanced patch research was informed by static analysis of the [Radeon-ID community distribution](https://sourceforge.net/projects/radeon-id-distribution/). RadeonPatcher implements its own package transformations and reversible registry handling.
 
 Server compatibility patching creates a non-exportable, two-year local code-signing certificate named `AMD Driver Modding Authority`. Its trust is added only to the machine Root and TrustedPublisher stores. **Uninstall All** removes that certificate from the machine certificate stores.
