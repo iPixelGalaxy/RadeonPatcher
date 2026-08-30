@@ -94,7 +94,9 @@ public sealed record InstallRequest(
     bool ReplaceAdrenalin,
     AudioInstallSource AudioInstallSource,
     bool AutoClearDownloadedCache,
-    DriverPatchOptions PatchOptions);
+    DriverPatchOptions PatchOptions,
+    IReadOnlyList<string> PreviouslyAppliedRadeonIdPresetIds,
+    WindowsDriverUpdateMode PreviouslyAppliedWindowsDriverUpdateMode);
 
 public sealed record UpdateCheckResult(
     bool UpdateAvailable,
@@ -522,6 +524,18 @@ public sealed class DriverWorkflow : IDisposable
         if (request.AudioInstallSource == AudioInstallSource.BundledLatest)
         {
             audioDriverVersion = await InstallBundledAudioAsync(request.EnableServerCompatibility, log);
+        }
+
+        if (request.PatchOptions.HasRuntimeTweaks ||
+            request.PreviouslyAppliedRadeonIdPresetIds.Count > 0 ||
+            request.PreviouslyAppliedWindowsDriverUpdateMode != WindowsDriverUpdateMode.Default)
+        {
+            await ApplyRuntimeTweaksAsync(
+                request.Hardware,
+                request.PatchOptions,
+                request.PreviouslyAppliedRadeonIdPresetIds,
+                request.PreviouslyAppliedWindowsDriverUpdateMode,
+                log);
         }
 
         if (request.AutoClearDownloadedCache)
@@ -1034,7 +1048,6 @@ public sealed class DriverWorkflow : IDisposable
         {
             log($"Installing display driver INF: {displayInf}");
             await StageAndForceInstallDisplayDriverAsync(displayInf, instanceId, log);
-            ApplyDriverRegistryOverrides(instanceId, patchOptions, log);
             RecordInstalledDriver(instanceId, driver, displayInf, log);
             return;
         }
@@ -1045,7 +1058,6 @@ public sealed class DriverWorkflow : IDisposable
         await SignPackageAsync(patchDirectory, patchedInf, log);
         log($"Installing patched display driver INF: {patchedInf}");
         await StageAndForceInstallDisplayDriverAsync(patchedInf, instanceId, log);
-        ApplyDriverRegistryOverrides(instanceId, patchOptions, log);
         RecordInstalledDriver(instanceId, driver, patchedInf, log);
     }
 
@@ -1473,9 +1485,48 @@ public sealed class DriverWorkflow : IDisposable
             lines.Add("HKR,,KMD_EnableReBarForLegacyASIC,0x00010001,1");
         }
 
-        log($"Added advanced INF overrides to [{installSection}].");
+        var presets = RadeonIdPresetCatalog.Resolve(options.RadeonIdPresetIds);
+        var conflicts = RadeonIdPresetCatalog.FindConflicts(options.RadeonIdPresetIds);
+        if (conflicts.Count > 0)
+        {
+            throw new InvalidOperationException("Selected Radeon-ID presets contain conflicting registry values.");
+        }
+        foreach (var mutation in presets
+                     .SelectMany(preset => preset.Mutations)
+                     .DistinctBy(mutation => $"{mutation.SubKey}\0{mutation.Name}", StringComparer.OrdinalIgnoreCase))
+        {
+            lines.Add(FormatInfMutation(mutation));
+        }
+
+        log(presets.Count == 0
+            ? $"Added advanced INF overrides to [{installSection}]."
+            : $"Added advanced INF overrides and {presets.Count} Radeon-ID presets to [{installSection}].");
         return true;
     }
+
+    private static string FormatInfMutation(RadeonIdPresetMutation mutation)
+    {
+        var subKey = string.IsNullOrWhiteSpace(mutation.SubKey) ? "" : $"\"{EscapeInfString(mutation.SubKey)}\"";
+        var prefix = $"HKR,{subKey},\"{EscapeInfString(mutation.Name)}\"";
+        return mutation.Kind switch
+        {
+            "DWord" => $"{prefix},0x00010001,{mutation.Value}",
+            "Binary" => $"{prefix},0x00000001,{FormatInfBinary(mutation.Value)}",
+            "ExpandString" => $"{prefix},0x00020000,\"{EscapeInfString(mutation.Value)}\"",
+            _ => $"{prefix},0x00000000,\"{EscapeInfString(mutation.Value)}\""
+        };
+    }
+
+    private static string FormatInfBinary(string hex)
+    {
+        if (hex.Length % 2 != 0 || !hex.All(Uri.IsHexDigit))
+        {
+            throw new InvalidOperationException("Radeon-ID preset contains invalid binary registry data.");
+        }
+        return string.Join(',', Enumerable.Range(0, hex.Length / 2).Select(index => hex.Substring(index * 2, 2)));
+    }
+
+    private static string EscapeInfString(string value) => value.Replace("\"", "\"\"");
 
     private static string? FindTargetInstallSection(List<string> lines, string? hardwareId)
     {
@@ -1728,7 +1779,12 @@ public sealed class DriverWorkflow : IDisposable
         return Version.TryParse(Regex.Match(version, @"\d+(\.\d+)+").Value, out var parsed) ? parsed : new Version(0, 0);
     }
 
-    public Task ApplyRuntimeTweaksAsync(HardwareInfo hardware, DriverPatchOptions options, Action<string> log)
+    public Task ApplyRuntimeTweaksAsync(
+        HardwareInfo hardware,
+        DriverPatchOptions options,
+        IReadOnlyList<string> previouslyAppliedRadeonIdPresetIds,
+        WindowsDriverUpdateMode previouslyAppliedWindowsDriverUpdateMode,
+        Action<string> log)
     {
         if (!options.Enabled)
         {
@@ -1739,8 +1795,16 @@ public sealed class DriverWorkflow : IDisposable
                 RebarMode = RebarOverrideMode.Default,
                 HardwareSchedulingMode = ToggleOverrideMode.Default,
                 HardwareFlipQueueMode = HardwareFlipQueueMode.Default,
-                ShaderCacheMode = ShaderCacheOverrideMode.Default
+                ShaderCacheMode = ShaderCacheOverrideMode.Default,
+                WindowsDriverUpdateMode = WindowsDriverUpdateMode.Default,
+                RadeonIdPresetIds = []
             };
+        }
+
+        if (options.WindowsDriverUpdateMode != WindowsDriverUpdateMode.Default ||
+            previouslyAppliedWindowsDriverUpdateMode != WindowsDriverUpdateMode.Default)
+        {
+            ApplyWindowsDriverUpdateMode(options.WindowsDriverUpdateMode, log);
         }
 
         var adapters = (hardware.DisplayAdapters ?? [])
@@ -1749,18 +1813,70 @@ public sealed class DriverWorkflow : IDisposable
             .ToList();
         if (adapters.Count == 0 && !string.IsNullOrWhiteSpace(hardware.GpuInstanceId))
         {
-            ApplyDriverRegistryOverrides(hardware.GpuInstanceId, options, log);
+            ApplyDriverRegistryOverrides(hardware.GpuInstanceId, options, previouslyAppliedRadeonIdPresetIds, log);
             return Task.CompletedTask;
         }
 
         foreach (var adapter in adapters)
         {
-            ApplyDriverRegistryOverrides(adapter.InstanceId, options, log);
+            ApplyDriverRegistryOverrides(adapter.InstanceId, options, previouslyAppliedRadeonIdPresetIds, log);
         }
         return Task.CompletedTask;
     }
 
-    private static void ApplyDriverRegistryOverrides(string? instanceId, DriverPatchOptions options, Action<string> log)
+    private static void ApplyWindowsDriverUpdateMode(WindowsDriverUpdateMode mode, Action<string> log)
+    {
+        (int? PreventMetadata, int? ServerSelection, int? SearchOrder, int? ExcludeDrivers) values = mode switch
+        {
+            WindowsDriverUpdateMode.Enabled => (0, 0, 1, 0),
+            WindowsDriverUpdateMode.NeededOnly => (1, 1, 2, 0),
+            WindowsDriverUpdateMode.PartiallyDisabled => (1, 1, 0, 0),
+            WindowsDriverUpdateMode.FullyDisabled => (1, 1, 0, 1),
+            _ => ((int?)null, (int?)null, (int?)null, (int?)null)
+        };
+
+        foreach (var prefix in new[] { @"SOFTWARE", @"SOFTWARE\WOW6432Node" })
+        {
+            SetWindowsUpdateValues($@"{prefix}\Microsoft\Windows\CurrentVersion", values);
+            SetWindowsUpdatePolicyValues($@"{prefix}\Policies\Microsoft\Windows", values);
+        }
+
+        log(mode == WindowsDriverUpdateMode.Default
+            ? "Restored Windows driver update policies to defaults."
+            : $"Applied Windows driver update policy: {mode}.");
+    }
+
+    private static void SetWindowsUpdateValues(
+        string root,
+        (int? PreventMetadata, int? ServerSelection, int? SearchOrder, int? ExcludeDrivers) values)
+    {
+        using var metadata = Registry.LocalMachine.CreateSubKey($@"{root}\Device Metadata", true);
+        using var searching = Registry.LocalMachine.CreateSubKey($@"{root}\DriverSearching", true);
+        using var update = Registry.LocalMachine.CreateSubKey($@"{root.Replace("Microsoft\\Windows\\CurrentVersion", "Microsoft\\WindowsUpdate")}\UX\Settings", true);
+        SetDwordOrDelete(metadata, "PreventDeviceMetadataFromNetwork", values.PreventMetadata);
+        SetDwordOrDelete(searching, "DriverServerSelection", values.ServerSelection);
+        SetDwordOrDelete(searching, "SearchOrderConfig", values.SearchOrder);
+        SetDwordOrDelete(update, "ExcludeWUDriversInQualityUpdate", values.ExcludeDrivers);
+    }
+
+    private static void SetWindowsUpdatePolicyValues(
+        string root,
+        (int? PreventMetadata, int? ServerSelection, int? SearchOrder, int? ExcludeDrivers) values)
+    {
+        using var metadata = Registry.LocalMachine.CreateSubKey($@"{root}\Device Metadata", true);
+        using var searching = Registry.LocalMachine.CreateSubKey($@"{root}\DriverSearching", true);
+        using var update = Registry.LocalMachine.CreateSubKey($@"{root}\WindowsUpdate", true);
+        SetDwordOrDelete(metadata, "PreventDeviceMetadataFromNetwork", values.PreventMetadata);
+        SetDwordOrDelete(searching, "DriverServerSelection", values.ServerSelection);
+        SetDwordOrDelete(searching, "SearchOrderConfig", values.SearchOrder);
+        SetDwordOrDelete(update, "ExcludeWUDriversInQualityUpdate", values.ExcludeDrivers);
+    }
+
+    private static void ApplyDriverRegistryOverrides(
+        string? instanceId,
+        DriverPatchOptions options,
+        IReadOnlyList<string> previouslyAppliedRadeonIdPresetIds,
+        Action<string> log)
     {
         if (!options.Enabled || string.IsNullOrWhiteSpace(instanceId)) return;
         var classPath = ResolveDisplayClassRegistryPath(instanceId);
@@ -1772,11 +1888,80 @@ public sealed class DriverWorkflow : IDisposable
 
         using var driverKey = Registry.LocalMachine.CreateSubKey(classPath, true)
             ?? throw new InvalidOperationException($"Could not open HKLM\\{classPath}.");
+        ClearRadeonIdPresetOverrides(driverKey, previouslyAppliedRadeonIdPresetIds);
         ApplyRebarOverride(driverKey, options.RebarMode);
         ApplyHardwareSchedulingOverride(driverKey, options.HardwareSchedulingMode);
         ApplyHardwareFlipOverride(driverKey, options.HardwareFlipQueueMode);
         ApplyShaderCacheOverride(driverKey, options.ShaderCacheMode);
-        log($"Applied runtime driver overrides to {instanceId}.");
+        var presetCount = ApplyRadeonIdPresetOverrides(driverKey, options.RadeonIdPresetIds);
+        log(presetCount == 0
+            ? $"Applied runtime driver overrides to {instanceId}."
+            : $"Applied runtime driver overrides and {presetCount} Radeon-ID presets to {instanceId}.");
+    }
+
+    private static void ClearRadeonIdPresetOverrides(RegistryKey driverKey, IReadOnlyList<string> presetIds)
+    {
+        foreach (var mutation in RadeonIdPresetCatalog.Resolve(presetIds)
+                     .SelectMany(preset => preset.Mutations)
+                     .DistinctBy(mutation => $"{mutation.SubKey}\0{mutation.Name}", StringComparer.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrWhiteSpace(mutation.SubKey))
+            {
+                driverKey.DeleteValue(mutation.Name, false);
+                continue;
+            }
+
+            using var key = driverKey.OpenSubKey(mutation.SubKey, true);
+            key?.DeleteValue(mutation.Name, false);
+        }
+    }
+
+    private static int ApplyRadeonIdPresetOverrides(RegistryKey driverKey, IReadOnlyList<string> presetIds)
+    {
+        var conflicts = RadeonIdPresetCatalog.FindConflicts(presetIds);
+        if (conflicts.Count > 0)
+        {
+            throw new InvalidOperationException("Selected Radeon-ID presets contain conflicting registry values.");
+        }
+
+        var presets = RadeonIdPresetCatalog.Resolve(presetIds);
+        foreach (var mutation in presets
+                     .SelectMany(preset => preset.Mutations)
+                     .DistinctBy(mutation => $"{mutation.SubKey}\0{mutation.Name}", StringComparer.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrWhiteSpace(mutation.SubKey))
+            {
+                SetRadeonIdMutation(driverKey, mutation);
+                continue;
+            }
+
+            using var key = driverKey.CreateSubKey(mutation.SubKey, true)
+                ?? throw new InvalidOperationException($"Could not create driver registry key {mutation.SubKey}.");
+            SetRadeonIdMutation(key, mutation);
+        }
+        return presets.Count;
+    }
+
+    private static void SetRadeonIdMutation(RegistryKey key, RadeonIdPresetMutation mutation)
+    {
+        switch (mutation.Kind)
+        {
+            case "DWord":
+                var dword = uint.Parse(mutation.Value, System.Globalization.CultureInfo.InvariantCulture);
+                key.SetValue(mutation.Name, unchecked((int)dword), RegistryValueKind.DWord);
+                break;
+            case "Binary":
+                key.SetValue(mutation.Name, Convert.FromHexString(mutation.Value), RegistryValueKind.Binary);
+                break;
+            case "ExpandString":
+                key.SetValue(mutation.Name, mutation.Value, RegistryValueKind.ExpandString);
+                break;
+            case "String":
+                key.SetValue(mutation.Name, mutation.Value, RegistryValueKind.String);
+                break;
+            default:
+                throw new InvalidOperationException($"Unsupported Radeon-ID registry value kind: {mutation.Kind}.");
+        }
     }
 
     private static string? ResolveDisplayClassRegistryPath(string instanceId)

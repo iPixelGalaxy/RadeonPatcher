@@ -18,6 +18,8 @@ This project is not affiliated with, endorsed by, sponsored by, or supported by 
 - Updates, downgrades, or reinstalls the selected display driver. Systems with Radeon RX plus AMD CPU graphics use matching driver versions from both AMD support pages.
 - Patches and locally signs display and audio catalogs when compatibility changes are required.
 - Optionally patches display INFs to disable AMD analytics and update prompts, expose supported feature flags, and enable legacy Resizable BAR capability flags.
+- Includes an experimental Radeon-ID feature lab containing all 370 recovered registry presets from Radeon-ID Distribution 25.3.1. Presets can be searched, applied to installed adapters, or embedded into a patched display INF.
+- Recreates Radeon-ID's five Windows driver-update policy modes, including restoration to Windows defaults.
 - Applies reversible per-adapter Resizable BAR, hardware GPU scheduling, hardware flip queue, and shader cache overrides.
 - Can build an experimental hybrid package that preserves a selected legacy AMD kernel while overlaying matching user-mode components from the latest modern AMD package.
 - Adds Windows Server INF compatibility automatically on Server editions.
@@ -68,7 +70,7 @@ The published executable is written to the repository root as `RadeonPatcher.exe
 
 RadeonPatcher requires administrator rights for driver installation, certificate trust, scheduled-task registration, and component removal. Review selected options before changing installed drivers.
 
-Advanced driver patches are disabled by default. Hybrid packages are intended for experienced Polaris and Vega users and require hardware validation; user-mode and kernel interfaces can change between AMD releases. RadeonPatcher builds hybrids only from AMD packages downloaded at runtime and does not bundle Radeon-ID executables, drivers, registry files, or other third-party payloads.
+Advanced driver patches are disabled by default. The raw Radeon-ID preset catalog is an exploratory interface: many values are undocumented, architecture-specific, obsolete, or mutually exclusive. The UI blocks presets that write conflicting values, but selected presets still require hardware-specific validation. Hybrid packages are intended for experienced Polaris and Vega users; user-mode and kernel interfaces can change between AMD releases. RadeonPatcher builds hybrids only from AMD packages downloaded at runtime and does not bundle Radeon-ID executables, drivers, registry files, or other third-party payloads.
 
 The advanced patch research was informed by static analysis of the [Radeon-ID community distribution](https://sourceforge.net/projects/radeon-id-distribution/). RadeonPatcher implements its own package transformations and reversible registry handling.
 

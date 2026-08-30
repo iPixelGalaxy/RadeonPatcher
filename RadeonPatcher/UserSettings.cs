@@ -20,6 +20,10 @@ public sealed class UserSettings
     public ToggleOverrideMode HardwareSchedulingMode { get; set; }
     public HardwareFlipQueueMode HardwareFlipQueueMode { get; set; }
     public ShaderCacheOverrideMode ShaderCacheMode { get; set; }
+    public WindowsDriverUpdateMode WindowsDriverUpdateMode { get; set; }
+    public WindowsDriverUpdateMode AppliedWindowsDriverUpdateMode { get; set; }
+    public List<string> RadeonIdPresetIds { get; set; } = [];
+    public List<string> AppliedRadeonIdPresetIds { get; set; } = [];
     public string? CustomSupportUrl { get; set; }
     public string? CustomCpuSupportUrl { get; set; }
     public string? SelectedDriverVersion { get; set; }

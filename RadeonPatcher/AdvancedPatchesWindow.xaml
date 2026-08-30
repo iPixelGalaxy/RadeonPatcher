@@ -47,6 +47,27 @@
                     <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource PanelBorderBrush}"
                             BorderThickness="1" CornerRadius="6" Padding="14" Margin="0,0,0,12">
                         <StackPanel>
+                            <TextBlock FontWeight="SemiBold" Text="Binary-only Radeon-ID feature inventory"/>
+                            <TextBlock Margin="0,6,0,10" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"
+                                       Text="Visible for coverage tracking. These cannot be recreated safely from the published distribution because their source or redistributable payload is missing."/>
+                            <TextBlock FontWeight="SemiBold" Text="Radeon Software archive switching and ReLive DVR/VR add-ons"/>
+                            <TextBlock Margin="0,2,0,8" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"
+                                       Text="Requires historical AMD UI and ReLive packages. Latest Adrenalin installation remains available in the main window."/>
+                            <TextBlock FontWeight="SemiBold" Text="Crash Defender, RDNA2 USB LED, Ryzen Master SDK, and mobile PCI bridge"/>
+                            <TextBlock Margin="0,2,0,8" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"
+                                       Text="Requires Radeon-ID-bundled drivers, services, or MSI payloads; no source was published."/>
+                            <TextBlock FontWeight="SemiBold" Text="OEM Media Foundation codecs and K-Lite integration"/>
+                            <TextBlock Margin="0,2,0,8" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"
+                                       Text="Requires third-party AppX and codec packages unrelated to AMD display-driver patching."/>
+                            <TextBlock FontWeight="SemiBold" Text="Proxy display miniport, Radeon-ID driver modes, and WHQL anti-cheat workaround"/>
+                            <TextBlock Margin="0,2,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"
+                                       Text="Requires unpublished kernel components. RadeonPatcher will not copy opaque signed drivers from the distribution."/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource PanelBorderBrush}"
+                            BorderThickness="1" CornerRadius="6" Padding="14" Margin="0,0,0,12">
+                        <StackPanel>
                             <TextBlock FontWeight="SemiBold" Text="Runtime driver overrides"/>
                             <TextBlock Margin="0,6,0,12" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"
                                        Text="Apply during driver installation or immediately to installed AMD adapters. Default removes RadeonPatcher overrides."/>
@@ -56,6 +77,7 @@
                                     <ColumnDefinition Width="220"/>
                                 </Grid.ColumnDefinitions>
                                 <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
@@ -87,7 +109,63 @@
                                     <ComboBoxItem Content="Disabled"/>
                                     <ComboBoxItem Content="Forced enabled"/>
                                 </ComboBox>
+                                <TextBlock Grid.Row="4" Margin="0,10,0,0" VerticalAlignment="Center" Text="Windows driver updates"/>
+                                <ComboBox x:Name="WindowsDriverUpdatesCombo" Grid.Row="4" Grid.Column="1" Margin="0,10,0,0" MinHeight="32">
+                                    <ComboBoxItem Content="Windows default"/>
+                                    <ComboBoxItem Content="Enabled"/>
+                                    <ComboBoxItem Content="Only when needed"/>
+                                    <ComboBoxItem Content="Partially disabled"/>
+                                    <ComboBoxItem Content="Fully disabled"/>
+                                </ComboBox>
                             </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource PanelBorderBrush}"
+                            BorderThickness="1" CornerRadius="6" Padding="14" Margin="0,0,0,12">
+                        <StackPanel>
+                            <TextBlock FontWeight="SemiBold" Text="Radeon-ID feature lab"/>
+                            <TextBlock Margin="0,6,0,10" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"
+                                       Text="Raw registry presets recovered from Radeon-ID Distribution 25.3.1. This exhaustive list is intentionally unpolished. Conflicting presets cannot be saved."/>
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="PresetSearchBox" Height="30" Padding="7,3" TextChanged="PresetSearchBox_TextChanged"
+                                         ToolTip="Filter by preset name, category, or registry value"/>
+                                <Button Grid.Column="1" Width="110" Height="30" Margin="8,0,0,0" Content="Clear Selected" Click="ClearPresetsButton_Click"/>
+                            </Grid>
+                            <DockPanel Margin="0,0,0,6">
+                                <TextBlock x:Name="PresetResultCountText" DockPanel.Dock="Left" Foreground="{DynamicResource SecondaryTextBrush}"/>
+                                <TextBlock x:Name="PresetSelectedCountText" DockPanel.Dock="Right" Foreground="{DynamicResource SecondaryTextBrush}"/>
+                            </DockPanel>
+                            <ListBox x:Name="RadeonIdPresetList" Height="330"
+                                     Background="{DynamicResource InputBackgroundBrush}"
+                                     BorderBrush="{DynamicResource InputBorderBrush}"
+                                     BorderThickness="1"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                     VirtualizingPanel.IsVirtualizing="True"
+                                     VirtualizingPanel.VirtualizationMode="Recycling">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="5,4">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" VerticalAlignment="Top"
+                                                      Click="PresetCheckBox_Click"/>
+                                            <StackPanel Grid.Column="1" Margin="8,0,0,0">
+                                                <TextBlock FontWeight="SemiBold" Text="{Binding DisplayName}" TextWrapping="Wrap"/>
+                                                <TextBlock Margin="0,2,0,0" Foreground="{DynamicResource SecondaryTextBrush}"
+                                                           Text="{Binding Details}" TextWrapping="Wrap"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
                         </StackPanel>
                     </Border>
 

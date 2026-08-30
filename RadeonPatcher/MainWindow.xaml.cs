@@ -374,7 +374,9 @@ public partial class MainWindow : Window
                         ? AudioInstallSource.DriverPackage
                         : AudioInstallSource.None,
                 AutoClearDownloadCacheCheck.IsChecked == true,
-                GetPatchOptions());
+                GetPatchOptions(),
+                [.. (_settings.AppliedRadeonIdPresetIds ?? [])],
+                _settings.AppliedWindowsDriverUpdateMode);
 
             var downloadProgress = new Progress<DriverDownloadProgress>(UpdateDownloadProgress);
             completedResult = await _workflow.InstallAsync(request, Log, downloadProgress);
@@ -385,6 +387,12 @@ public partial class MainWindow : Window
 
         if (installed && completedRequest is not null && completedResult is not null)
         {
+            _settings.AppliedRadeonIdPresetIds = completedRequest.PatchOptions.Enabled
+                ? [.. completedRequest.PatchOptions.RadeonIdPresetIds]
+                : [];
+            _settings.AppliedWindowsDriverUpdateMode = completedRequest.PatchOptions.Enabled
+                ? completedRequest.PatchOptions.WindowsDriverUpdateMode
+                : WindowsDriverUpdateMode.Default;
             RememberInstalledVersions(completedResult);
             await RefreshAfterInstallAsync(completedRequest, completedResult);
         }
@@ -891,7 +899,9 @@ public partial class MainWindow : Window
         _settings.RebarMode,
         _settings.HardwareSchedulingMode,
         _settings.HardwareFlipQueueMode,
-        _settings.ShaderCacheMode);
+        _settings.ShaderCacheMode,
+        _settings.WindowsDriverUpdateMode,
+        [.. (_settings.RadeonIdPresetIds ?? [])]);
 
     private void SavePatchOptions(DriverPatchOptions options)
     {
@@ -905,6 +915,8 @@ public partial class MainWindow : Window
         _settings.HardwareSchedulingMode = options.HardwareSchedulingMode;
         _settings.HardwareFlipQueueMode = options.HardwareFlipQueueMode;
         _settings.ShaderCacheMode = options.ShaderCacheMode;
+        _settings.WindowsDriverUpdateMode = options.WindowsDriverUpdateMode;
+        _settings.RadeonIdPresetIds = [.. options.RadeonIdPresetIds];
         SaveSettings();
         UpdateAdvancedPatchesSummary();
     }
@@ -923,6 +935,7 @@ public partial class MainWindow : Window
         if (options.EnableFeatureOverrides) enabled.Add("feature flags");
         if (options.EnableLegacyRebarInfSupport) enabled.Add("legacy ReBAR INF");
         if (options.UseHybridDriver) enabled.Add("hybrid user-mode components");
+        if (options.RadeonIdPresetIds.Count > 0) enabled.Add($"Radeon-ID presets ({options.RadeonIdPresetIds.Count})");
         if (options.HasRuntimeTweaks) enabled.Add("runtime overrides");
         AdvancedPatchesButton.ToolTip = enabled.Count == 0
             ? "Advanced patching enabled; all options use AMD defaults."
@@ -940,7 +953,19 @@ public partial class MainWindow : Window
         await Busy(async () =>
         {
             var hardware = _hardware ?? await _workflow.GetHardwareInfoAsync();
-            await _workflow.ApplyRuntimeTweaksAsync(hardware, dialog.Options, Log);
+            await _workflow.ApplyRuntimeTweaksAsync(
+                hardware,
+                dialog.Options,
+                _settings.AppliedRadeonIdPresetIds ?? [],
+                _settings.AppliedWindowsDriverUpdateMode,
+                Log);
+            _settings.AppliedRadeonIdPresetIds = dialog.Options.Enabled
+                ? [.. dialog.Options.RadeonIdPresetIds]
+                : [];
+            _settings.AppliedWindowsDriverUpdateMode = dialog.Options.Enabled
+                ? dialog.Options.WindowsDriverUpdateMode
+                : WindowsDriverUpdateMode.Default;
+            SaveSettings();
             Log("Runtime driver overrides applied. Restart Windows to ensure all changes take effect.");
         });
     }
