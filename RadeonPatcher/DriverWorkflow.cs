@@ -446,6 +446,21 @@ public sealed class DriverWorkflow : IDisposable
         string? cpuGraphicsPackageVersion = null;
         string? audioDriverVersion = null;
         await EnsurePayloadsAsync();
+        var preparedPackages = new Dictionary<string, string>(StringComparer.Ordinal);
+        async Task<string> PreparePackageAsync(DriverRelease driver)
+        {
+            if (preparedPackages.TryGetValue(driver.DownloadUrl, out var preparedRoot))
+            {
+                log($"Reusing the prepared package for GPU and CPU graphics: {preparedRoot}");
+                return preparedRoot;
+            }
+
+            var packageExe = await DownloadDriverAsync(driver, false, log, downloadProgress);
+            var packageRoot = await ExtractPackageAsync(packageExe, log);
+            preparedPackages.Add(driver.DownloadUrl, packageRoot);
+            return packageRoot;
+        }
+
         if (request.Driver is not null)
         {
             var cpuGraphicsIsPrimaryTarget = request.Hardware.CpuGraphicsAdapter is not null &&
@@ -456,21 +471,17 @@ public sealed class DriverWorkflow : IDisposable
             string? packageRoot = null;
             if (needsPrimaryPackage)
             {
-                var packageExe = await DownloadDriverAsync(request.Driver.Primary, false, log, downloadProgress);
-                packageRoot = await ExtractPackageAsync(packageExe, log);
+                packageRoot = await PreparePackageAsync(request.Driver.Primary);
             }
             string? cpuPackageRoot = null;
             if (request.InstallCpuGraphicsDriver && !cpuGraphicsIsPrimaryTarget && request.Driver.CpuGraphics is not null && request.Hardware.CpuGraphicsAdapter is not null)
             {
-                log($"Downloading CPU graphics package for {request.Driver.CpuGraphics.VersionText}.");
-                var cpuPackageExe = await DownloadDriverAsync(request.Driver.CpuGraphics, false, log, downloadProgress);
-                cpuPackageRoot = await ExtractPackageAsync(cpuPackageExe, log);
+                cpuPackageRoot = await PreparePackageAsync(request.Driver.CpuGraphics);
             }
 
             if (request.InstallPrimaryGpuDriver)
             {
                 if (packageRoot is null) throw new InvalidOperationException("Primary GPU package was not prepared.");
-                _ = FindDisplayInf(packageRoot, request.Hardware.GpuInstanceId);
                 await InstallDisplayDriverAsync(packageRoot, request.Hardware.GpuInstanceId, request.EnableServerCompatibility, request.Driver.Primary, log);
                 primaryGpuPackageVersion = request.Driver.VersionText;
             }
@@ -479,7 +490,6 @@ public sealed class DriverWorkflow : IDisposable
                 var cpuRoot = cpuGraphicsIsPrimaryTarget ? packageRoot : cpuPackageRoot;
                 var cpuDriver = request.Driver.CpuGraphics ?? request.Driver.Primary;
                 if (cpuRoot is null) throw new InvalidOperationException("CPU graphics package was not prepared.");
-                _ = FindDisplayInf(cpuRoot, request.Hardware.CpuGraphicsAdapter.InstanceId);
                 await InstallDisplayDriverAsync(cpuRoot, request.Hardware.CpuGraphicsAdapter.InstanceId, request.EnableServerCompatibility, cpuDriver, log);
                 cpuGraphicsPackageVersion = cpuDriver.VersionText;
             }
@@ -554,8 +564,13 @@ public sealed class DriverWorkflow : IDisposable
         }
 
         log("Updating installed update checker helper.");
+        var checkOnBootText = await RunPowerShellAsync("""
+            $triggers = (Get-ScheduledTask -TaskName 'RadeonPatcher Update Check' -ErrorAction Stop).Triggers
+            @($triggers | Where-Object { $_.CimClass.CimClassName -in 'MSFT_TaskBootTrigger','MSFT_TaskLogonTrigger' }).Count -gt 0
+            """);
+        var checkOnBoot = bool.Parse(checkOnBootText.Trim());
         await UninstallUpdateCheckServiceAsync(log);
-        await InstallUpdateCheckServiceAsync(checkOnBoot: true, checkFrequency, log);
+        await InstallUpdateCheckServiceAsync(checkOnBoot, checkFrequency, log);
     }
 
     public async Task InstallUpdateCheckServiceAsync(bool checkOnBoot, TimeSpan checkFrequency, Action<string> log)
@@ -571,20 +586,22 @@ public sealed class DriverWorkflow : IDisposable
 
         var startTime = DateTime.Now.AddMinutes(10).ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
         var frequencyMinutes = (int)Math.Ceiling(checkFrequency.TotalMinutes);
-        var bootTrigger = checkOnBoot ? "$triggers += New-ScheduledTaskTrigger -AtStartup" : "";
+        // Notifications need the user's interactive desktop, which is available at sign-in.
+        var bootTrigger = checkOnBoot ? "$triggers += New-ScheduledTaskTrigger -AtLogOn -User $userId" : "";
         var scheduleDescription = checkOnBoot
             ? $"at Windows boot and every {FormatInterval(checkFrequency)}"
             : $"every {FormatInterval(checkFrequency)}";
         var script = $$"""
             $ErrorActionPreference = 'Stop'
             $taskName = 'RadeonPatcher Update Check'
+            $userId = [Security.Principal.WindowsIdentity]::GetCurrent().Name
             $exe = '{{serviceExe.Replace("'", "''")}}'
             $action = New-ScheduledTaskAction -Execute $exe -Argument '--scheduled'
             $triggers = @()
             {{bootTrigger}}
             $triggers += New-ScheduledTaskTrigger -Once -At '{{startTime}}' -RepetitionInterval (New-TimeSpan -Minutes {{frequencyMinutes}}) -RepetitionDuration (New-TimeSpan -Days 3650)
-            $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 15)
-            $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive
+            $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 15)
+            $principal = New-ScheduledTaskPrincipal -UserId $userId -LogonType Interactive
             Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $triggers -Settings $settings -Principal $principal -Force | Out-Null
             """;
         log("Installing non-elevated update check scheduled task.");
@@ -986,6 +1003,21 @@ public sealed class DriverWorkflow : IDisposable
     private async Task<string> ExtractPackageAsync(string packageExe, Action<string> log)
     {
         var destination = Path.Combine(ExtractedRoot, Path.GetFileNameWithoutExtension(packageExe));
+        var markerPath = Path.Combine(destination, ".extraction-sha256");
+        string packageHash;
+        await using (var archive = File.OpenRead(packageExe))
+        {
+            packageHash = Convert.ToHexString(await SHA256.HashDataAsync(archive));
+        }
+
+        // Only reuse complete extractions of the same archive. A failed extraction has no marker.
+        if (File.Exists(markerPath) && await File.ReadAllTextAsync(markerPath) == packageHash &&
+            Directory.EnumerateFiles(destination, "*.inf", SearchOption.AllDirectories).Any())
+        {
+            log($"Reusing extracted package: {destination}");
+            return destination;
+        }
+
         if (Directory.Exists(destination))
         {
             Directory.Delete(destination, true);
@@ -994,6 +1026,7 @@ public sealed class DriverWorkflow : IDisposable
 
         log($"Extracting package to {destination}");
         await RunProcessAsync(Path.Combine(ToolsRoot, "7z.exe"), $"x \"{packageExe}\" -o\"{destination}\" -y", log);
+        await File.WriteAllTextAsync(markerPath, packageHash);
         return destination;
     }
 
@@ -1003,7 +1036,7 @@ public sealed class DriverWorkflow : IDisposable
         if (!serverCompatibility)
         {
             log($"Installing display driver INF: {displayInf}");
-            await StageAndForceInstallDisplayDriverAsync(displayInf, instanceId, log);
+            await ForceInstallDisplayDriverAsync(displayInf, instanceId, log);
             RecordInstalledDriver(instanceId, driver, displayInf, log);
             return;
         }
@@ -1013,32 +1046,37 @@ public sealed class DriverWorkflow : IDisposable
         PatchDisplayInf(patchedInf, instanceId, log);
         await SignPackageAsync(patchDirectory, patchedInf, log);
         log($"Installing patched display driver INF: {patchedInf}");
-        await StageAndForceInstallDisplayDriverAsync(patchedInf, instanceId, log);
+        await ForceInstallDisplayDriverAsync(patchedInf, instanceId, log);
         RecordInstalledDriver(instanceId, driver, patchedInf, log);
     }
 
-    private static async Task StageAndForceInstallDisplayDriverAsync(string infPath, string? instanceId, Action<string> log)
+    private static async Task ForceInstallDisplayDriverAsync(string infPath, string? instanceId, Action<string> log)
     {
-        await RunProcessAsync("pnputil.exe", $"/add-driver \"{infPath}\"", log);
-
         var hardwareId = ExtractExactHardwareId(instanceId);
         if (string.IsNullOrWhiteSpace(hardwareId))
         {
             throw new InvalidOperationException("Could not determine the exact GPU hardware ID for forced display driver installation.");
         }
 
-        log($"Forcing display driver selection for {hardwareId}.");
-        var installed = UpdateDriverForPlugAndPlayDevices(
-            IntPtr.Zero,
-            hardwareId,
-            Path.GetFullPath(infPath),
-            InstallFlagForce | InstallFlagNonInteractive,
-            out var rebootRequired);
-        if (!installed)
+        log($"Staging and installing display driver for {hardwareId}. Windows may take several minutes to copy driver files.");
+        var stopwatch = Stopwatch.StartNew();
+        // This API stages the package itself; a separate pnputil pass repeats that work.
+        var rebootRequired = await Task.Run(() =>
         {
-            throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "Forced display driver installation failed.");
-        }
+            var installed = UpdateDriverForPlugAndPlayDevices(
+                IntPtr.Zero,
+                hardwareId,
+                Path.GetFullPath(infPath),
+                InstallFlagForce | InstallFlagNonInteractive,
+                out var needsReboot);
+            if (!installed)
+            {
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "Forced display driver installation failed.");
+            }
+            return needsReboot;
+        });
 
+        log($"Display driver staging and installation took {stopwatch.Elapsed.TotalSeconds:F1} seconds.");
         log(rebootRequired
             ? "Display driver installed. Windows reports a reboot is required."
             : "Display driver installed.");
@@ -1625,8 +1663,10 @@ public sealed class DriverWorkflow : IDisposable
 
     private static async Task<int> RunProcessAsync(string fileName, string arguments, Action<string> log, string? workingDirectory = null, bool throwOnError = true, bool allowNoUpdate = false, bool allowAlreadyRemoved = false)
     {
+        var stopwatch = Stopwatch.StartNew();
         var output = new StringBuilder();
         var exit = await RunProcessCaptureAsync(fileName, arguments, output, workingDirectory, log);
+        log($"{Path.GetFileName(fileName)} finished in {stopwatch.Elapsed.TotalSeconds:F1} seconds (exit {exit}).");
         var text = output.ToString();
         if (exit == 3010)
         {
@@ -1670,8 +1710,14 @@ public sealed class DriverWorkflow : IDisposable
             WorkingDirectory = workingDirectory ?? Environment.CurrentDirectory
         };
         using var process = Process.Start(start) ?? throw new InvalidOperationException($"Could not start {fileName}.");
-        process.OutputDataReceived += (_, e) => { if (e.Data is not null) { output.AppendLine(e.Data); log?.Invoke(e.Data); } };
-        process.ErrorDataReceived += (_, e) => { if (e.Data is not null) { output.AppendLine(e.Data); log?.Invoke(e.Data); } };
+        void CaptureOutput(object sender, DataReceivedEventArgs e)
+        {
+            if (e.Data is null) return;
+            lock (output) output.AppendLine(e.Data);
+            log?.Invoke(e.Data);
+        }
+        process.OutputDataReceived += CaptureOutput;
+        process.ErrorDataReceived += CaptureOutput;
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
         await process.WaitForExitAsync();

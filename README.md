@@ -26,7 +26,7 @@ This project is not affiliated with, endorsed by, sponsored by, or supported by 
 - Manages downloaded, extracted, and patched package caches with optional automatic cleanup.
 - Remembers installation choices in the user's application data.
 - Provides System, Light, and Dark themes.
-- Offers a lightweight scheduled driver update checker for startup and daily checks.
+- Offers a lightweight scheduled driver update checker with a configurable interval and one update notification per Windows boot.
 - Checks the upstream GitHub Releases for RadeonPatcher updates and can replace and restart itself.
 
 ## Application Updates
@@ -37,7 +37,7 @@ Updates are downloaded only from that repository's GitHub Release asset path. Ra
 
 ## Driver Update Checker
 
-The **Install Update Check Service** button registers a non-elevated scheduled task named `RadeonPatcher Update Check`. The standalone checker runs its own lightweight hardware and AMD release lookup at Windows startup and once every 24 hours; it does not launch the administrator-privileged main application. New driver availability produces a Windows notification, and drivers are never installed automatically. Running `C:\ProgramData\RadeonPatcher\RadeonPatcherUpdateCheck.exe` directly performs a test check and reports the result in a notification.
+The **Install Update Check Service** button registers a non-elevated scheduled task named `RadeonPatcher Update Check`. The standalone checker runs at the selected interval and, when **Check on boot** is enabled, at sign-in after Windows starts. It does not launch the administrator-privileged main application. If no update is available or a check fails, it continues checking at the selected interval. After notifying you that an update is available, scheduled checks stay silent for the rest of that Windows boot. A new boot allows another notification if an update is still available. Signing out and back in does not reset this limit. Drivers are never installed automatically. Running `C:\ProgramData\RadeonPatcher\RadeonPatcherUpdateCheck.exe` directly always checks and reports the result in a notification, without changing scheduled notification state.
 
 ## Verified Releases
 
@@ -64,5 +64,7 @@ The published executable is written to the repository root as `RadeonPatcher.exe
 ## Notes
 
 RadeonPatcher requires administrator rights for driver installation, certificate trust, scheduled-task registration, and component removal. Review selected options before changing installed drivers.
+
+Experimental driver tweaks, the Radeon-ID feature lab, and hybrid packages are maintained on the `experimental-driver-tweaks` branch.
 
 Server compatibility patching creates a non-exportable, two-year local code-signing certificate named `AMD Driver Modding Authority`. Its trust is added only to the machine Root and TrustedPublisher stores. **Uninstall All** removes that certificate from the machine certificate stores.

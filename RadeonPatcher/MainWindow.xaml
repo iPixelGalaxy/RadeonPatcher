@@ -528,63 +528,69 @@
                 </Border>
 
                 <Border Grid.Row="1" Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource PanelBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14">
-                <StackPanel>
-                    <StackPanel x:Name="DriverSourcePanel" Visibility="Collapsed">
-                        <TextBlock FontWeight="SemiBold" Text="Driver source"/>
-                        <TextBlock x:Name="SourceSummaryText" Margin="0,10,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
-                        <CheckBox x:Name="CustomUrlCheck" Content="Use Custom URL" Margin="0,12,0,8" Visibility="Collapsed" Checked="CustomUrlCheck_Changed" Unchecked="CustomUrlCheck_Changed"/>
-                        <StackPanel x:Name="CustomUrlPanel" Visibility="Collapsed">
-                            <TextBlock Margin="0,0,0,4" Text="AMD support URL"/>
-                            <TextBox x:Name="SupportUrlBox" Height="30" TextWrapping="NoWrap" LostFocus="SupportUrlBox_LostFocus"/>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                              CanContentScroll="False" Padding="0,0,2,0">
+                    <ScrollViewer.Resources>
+                        <Style TargetType="ScrollBar" BasedOn="{StaticResource LogScrollBarStyle}"/>
+                    </ScrollViewer.Resources>
+                    <StackPanel>
+                        <StackPanel x:Name="DriverSourcePanel" Visibility="Collapsed">
+                            <TextBlock FontWeight="SemiBold" Text="Driver source"/>
+                            <TextBlock x:Name="SourceSummaryText" Margin="0,10,0,0" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
+                            <CheckBox x:Name="CustomUrlCheck" Content="Use Custom URL" Margin="0,12,0,8" Visibility="Collapsed" Checked="CustomUrlCheck_Changed" Unchecked="CustomUrlCheck_Changed"/>
+                            <StackPanel x:Name="CustomUrlPanel" Visibility="Collapsed">
+                                <TextBlock Margin="0,0,0,4" Text="AMD support URL"/>
+                                <TextBox x:Name="SupportUrlBox" Height="30" TextWrapping="NoWrap" LostFocus="SupportUrlBox_LostFocus"/>
+                            </StackPanel>
+                            <StackPanel x:Name="CpuSupportUrlPanel" Visibility="Collapsed" Margin="0,10,0,0">
+                                <TextBlock Margin="0,0,0,4" Text="CPU graphics AMD support URL"/>
+                                <TextBox x:Name="CpuSupportUrlBox" Height="30" TextWrapping="NoWrap" LostFocus="CpuSupportUrlBox_LostFocus"/>
+                            </StackPanel>
                         </StackPanel>
-                        <StackPanel x:Name="CpuSupportUrlPanel" Visibility="Collapsed" Margin="0,10,0,0">
-                            <TextBlock Margin="0,0,0,4" Text="CPU graphics AMD support URL"/>
-                            <TextBox x:Name="CpuSupportUrlBox" Height="30" TextWrapping="NoWrap" LostFocus="CpuSupportUrlBox_LostFocus"/>
-                        </StackPanel>
-                    </StackPanel>
 
-                    <Grid Margin="0,6,0,4">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock FontWeight="SemiBold" Text="Select Driver Version"/>
-                        <TextBlock x:Name="SelectedDriverText" Grid.Column="1" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
-                    </Grid>
-                    <ComboBox x:Name="DriverCombo" MinHeight="32">
-                        <ComboBox.ItemTemplate>
-                            <DataTemplate>
-                                <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource PrimaryTextBrush}"/>
-                            </DataTemplate>
-                        </ComboBox.ItemTemplate>
-                    </ComboBox>
-
-                    <StackPanel x:Name="InstallOptionsPanel" Visibility="Hidden">
-                        <Separator Margin="0,18,0,14"/>
-                        <CheckBox x:Name="InstallDisplayDriverCheck" Content="Install GPU Driver" IsChecked="True" Margin="0,0,0,10"/>
-                        <CheckBox x:Name="InstallCpuGraphicsDriverCheck" Content="Install iGPU Driver" IsChecked="True" Margin="0,0,0,10" Visibility="Collapsed"/>
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                            <CheckBox x:Name="ServerCompatCheck" Content="Enable Windows Server Compatibility"/>
-                            <TextBlock Text=" (?)" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" Cursor="Help" ToolTip="Standard AMD Drivers only support Workstation editions with the .1 flag, while Server is .3. The driver works perfectly, unsure why AMD made this choice."/>
-                        </StackPanel>
-                        <CheckBox x:Name="AdrenalinCheck" Content="Install AMD Software: Adrenalin Edition" IsChecked="True" Margin="0,0,0,10"/>
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                            <CheckBox x:Name="AudioCheck" Content="Install Latest AMD HD Audio Driver"/>
-                            <TextBlock x:Name="AudioInstalledHint" Text=" (?)" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" Cursor="Help" ToolTip="AMD does not provide the latest driver with their GPU Drivers, this driver is sourced from Snappy Driver Installer."/>
-                        </StackPanel>
-                        <CheckBox x:Name="AutoClearDownloadCacheCheck" Content="Auto Clear Downloaded Cache" IsChecked="True" Margin="0,0,0,10"/>
-                        <Grid Margin="0,4,0,10">
+                        <Grid Margin="0,6,0,4">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <Button x:Name="UninstallGpuDriverButton" Height="34" Margin="0,0,5,0" Content="Uninstall GPU Driver" Click="UninstallGpuDriverButton_Click"/>
-                            <Button x:Name="UninstallAudioDriverButton" Grid.Column="1" Height="34" Margin="5,0,0,0" Content="Uninstall Audio Driver" Click="UninstallAudioDriverButton_Click"/>
+                            <TextBlock FontWeight="SemiBold" Text="Select Driver Version"/>
+                            <TextBlock x:Name="SelectedDriverText" Grid.Column="1" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap"/>
                         </Grid>
-                        <Button x:Name="UninstallAdrenalinButton" Height="34" Margin="0,0,0,10" Content="Uninstall AMD Software" Click="UninstallAdrenalinButton_Click"/>
-                        <Button x:Name="UninstallAllButton" Height="34" Content="Uninstall All Drivers &amp; AMD Software" Click="UninstallAllButton_Click"/>
+                        <ComboBox x:Name="DriverCombo" MinHeight="32">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding DisplayName}" Foreground="{DynamicResource PrimaryTextBrush}"/>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+
+                        <StackPanel x:Name="InstallOptionsPanel" Visibility="Hidden">
+                            <Separator Margin="0,18,0,14"/>
+                            <CheckBox x:Name="InstallDisplayDriverCheck" Content="Install GPU Driver" IsChecked="True" Margin="0,0,0,10"/>
+                            <CheckBox x:Name="InstallCpuGraphicsDriverCheck" Content="Install iGPU Driver" IsChecked="True" Margin="0,0,0,10" Visibility="Collapsed"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                <CheckBox x:Name="ServerCompatCheck" Content="Enable Windows Server Compatibility"/>
+                                <TextBlock Text=" (?)" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" Cursor="Help" ToolTip="Standard AMD Drivers only support Workstation editions with the .1 flag, while Server is .3. The driver works perfectly, unsure why AMD made this choice."/>
+                            </StackPanel>
+                            <CheckBox x:Name="AdrenalinCheck" Content="Install AMD Software: Adrenalin Edition" IsChecked="True" Margin="0,0,0,10"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                <CheckBox x:Name="AudioCheck" Content="Install Latest AMD HD Audio Driver"/>
+                                <TextBlock x:Name="AudioInstalledHint" Text=" (?)" Foreground="{DynamicResource SecondaryTextBrush}" VerticalAlignment="Center" Cursor="Help" ToolTip="AMD does not provide the latest driver with their GPU Drivers, this driver is sourced from Snappy Driver Installer."/>
+                            </StackPanel>
+                            <CheckBox x:Name="AutoClearDownloadCacheCheck" Content="Auto Clear Downloaded Cache" IsChecked="True" Margin="0,0,0,10"/>
+                            <Grid Margin="0,4,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Button x:Name="UninstallGpuDriverButton" Height="34" Margin="0,0,5,0" Content="Uninstall GPU Driver" Click="UninstallGpuDriverButton_Click"/>
+                                <Button x:Name="UninstallAudioDriverButton" Grid.Column="1" Height="34" Margin="5,0,0,0" Content="Uninstall Audio Driver" Click="UninstallAudioDriverButton_Click"/>
+                            </Grid>
+                            <Button x:Name="UninstallAdrenalinButton" Height="34" Margin="0,0,0,10" Content="Uninstall AMD Software" Click="UninstallAdrenalinButton_Click"/>
+                            <Button x:Name="UninstallAllButton" Height="34" Content="Uninstall All Drivers &amp; AMD Software" Click="UninstallAllButton_Click"/>
+                        </StackPanel>
                     </StackPanel>
-                </StackPanel>
+                </ScrollViewer>
             </Border>
             </Grid>
 
@@ -627,7 +633,7 @@
                     <TextBlock Text=" (?)" Foreground="{DynamicResource SecondaryTextBrush}"/>
                 </StackPanel>
             </Button>
-            <Button x:Name="UpdateCheckServiceButton" DockPanel.Dock="Right" Width="205" Height="38" Margin="0,0,10,0" Click="UpdateCheckServiceButton_Click" ToolTip="Runs RadeonPatcher at startup and once every 24 hours to check for newer AMD drivers.">
+            <Button x:Name="UpdateCheckServiceButton" DockPanel.Dock="Right" Width="205" Height="38" Margin="0,0,10,0" Click="UpdateCheckServiceButton_Click" ToolTip="Checks for newer AMD drivers at your chosen interval. Notifies once per Windows boot when an update is available.">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                     <TextBlock x:Name="UpdateCheckServiceButtonText" Text="Install Update Check Service"/>
                     <TextBlock Text=" (?)" Foreground="{DynamicResource SecondaryTextBrush}"/>

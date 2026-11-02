@@ -14,7 +14,7 @@
 
         <TextBlock FontSize="18" FontWeight="SemiBold" Text="Install update check service" TextWrapping="Wrap"/>
         <TextBlock Grid.Row="1" Margin="0,14,0,18" Foreground="{DynamicResource SecondaryTextBrush}" TextWrapping="Wrap" LineHeight="20"
-                   Text="Choose when RadeonPatcher should check for newer AMD drivers. The checker only shows notifications; it does not install drivers automatically."/>
+                   Text="Choose when RadeonPatcher should check for newer AMD drivers. It checks until an update is found, then notifies once per Windows boot. Drivers are not installed automatically."/>
 
         <StackPanel Grid.Row="2" Margin="0,0,0,22">
             <CheckBox x:Name="CheckOnBootBox" Margin="0,0,0,14" Content="Check on boot" IsChecked="True"/>

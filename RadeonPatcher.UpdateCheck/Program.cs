@@ -7,6 +7,8 @@ using Forms = System.Windows.Forms;
 internal static class Program
 {
     private static readonly Regex DriverUrlRegex = new(@"https://drivers\.amd\.com/drivers/[^\""'<>\s\\]+?\.exe", RegexOptions.IgnoreCase);
+    private static readonly string StateDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RadeonPatcher");
+    private static readonly string NotificationStatePath = Path.Combine(StateDirectory, "update-notification.json");
 
     [STAThread]
     private static async Task Main(string[] args)
@@ -14,10 +16,22 @@ internal static class Program
         var scheduled = args.Any(arg => arg.Equals("--scheduled", StringComparison.OrdinalIgnoreCase));
         try
         {
-            var result = await CheckAsync();
+            // Keep overlapping scheduled invocations from both showing the same notification.
+            using var checkLock = scheduled ? AcquireScheduledCheckLock() : null;
+            if (scheduled && checkLock is null) return;
+
+            var hardware = await DetectHardwareAsync();
+            if (scheduled && LoadNotificationState()?.BootSession == hardware.BootSession) return;
+            var result = await CheckAsync(hardware);
             if (result.UpdateAvailable)
             {
                 await ShowNotificationAsync("AMD driver update available", $"Version {result.LatestVersion} is available. Installed: {result.CurrentVersion ?? "unknown"}.");
+                if (scheduled)
+                {
+                    var temporaryPath = NotificationStatePath + ".tmp";
+                    File.WriteAllText(temporaryPath, JsonSerializer.Serialize(new NotificationState(result.BootSession)));
+                    File.Move(temporaryPath, NotificationStatePath, overwrite: true);
+                }
             }
             else if (!scheduled)
             {
@@ -33,9 +47,35 @@ internal static class Program
         }
     }
 
-    private static async Task<CheckResult> CheckAsync()
+    private static FileStream? AcquireScheduledCheckLock()
     {
-        var hardware = await DetectHardwareAsync();
+        Directory.CreateDirectory(StateDirectory);
+        try
+        {
+            return new FileStream(Path.Combine(StateDirectory, "update-notification.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+    }
+
+    private static NotificationState? LoadNotificationState()
+    {
+        try
+        {
+            return File.Exists(NotificationStatePath)
+                ? JsonSerializer.Deserialize<NotificationState>(File.ReadAllText(NotificationStatePath))
+                : null;
+        }
+        catch (Exception ex) when (ex is IOException or JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static async Task<CheckResult> CheckAsync(Hardware hardware)
+    {
         var supportUrl = ResolveSupportUrl(hardware.GpuName, hardware.CpuName)
             ?? throw new InvalidOperationException("No mapped AMD support page was found for this GPU.");
         using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
@@ -49,15 +89,27 @@ internal static class Program
             .FirstOrDefault() ?? throw new InvalidOperationException("No AMD driver releases were found.");
         var currentText = ResolveInstalledPackageVersion(hardware.InstanceId);
         var updateAvailable = !Version.TryParse(currentText, out var current) || latest > current;
-        return new CheckResult(updateAvailable, currentText, latest.ToString(3), updateAvailable
+        return new CheckResult(updateAvailable, currentText, latest.ToString(3), hardware.BootSession, updateAvailable
             ? $"AMD driver {latest.ToString(3)} is available."
             : $"AMD driver is current. Installed: {currentText}. Latest: {latest.ToString(3)}.");
     }
 
     private static async Task<Hardware> DetectHardwareAsync()
     {
-        var script = "$gpus = @(Get-CimInstance Win32_PnPEntity | Where-Object { $_.PNPDeviceID -like 'PCI\\VEN_1002*' -and ($_.PNPClass -eq 'Display' -or $_.ClassGuid -eq '{4d36e968-e325-11ce-bfc1-08002be10318}' -or $_.Service -match 'BasicDisplay|amdwddmg|amdkmdag') } | ForEach-Object { [pscustomobject]@{ Name=$_.Name; InstanceId=$_.PNPDeviceID } }); $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1; $entries = @($gpus) + @([pscustomobject]@{ CpuName=$cpu.Name }); [Console]::WriteLine([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($entries | ConvertTo-Json -Compress))))"
-            .Replace("CPU_GRAPHICS_DEVICE_IDS", RadeonPatcher.AmdCpuGraphicsHardware.DeviceIdAlternation, StringComparison.Ordinal);
+        var script = """
+            $ErrorActionPreference = 'Stop'
+            $gpus = @(Get-CimInstance Win32_PnPEntity | Where-Object {
+              $_.PNPDeviceID -like 'PCI\VEN_1002*' -and
+              ($_.PNPClass -eq 'Display' -or $_.ClassGuid -eq '{4d36e968-e325-11ce-bfc1-08002be10318}' -or $_.Service -match 'BasicDisplay|amdwddmg|amdkmdag')
+            } | ForEach-Object { [pscustomobject]@{ Name=$_.Name; InstanceId=$_.PNPDeviceID } })
+            $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
+            # Kernel boot events also distinguish Fast Startup sessions. Ignore hibernation resumes.
+            $boot = Get-WinEvent -LogName System -FilterXPath "*[System[Provider[@Name='Microsoft-Windows-Kernel-Boot'] and EventID=27]] and *[EventData[Data[@Name='BootType'] != '2']]" -MaxEvents 1 -ErrorAction SilentlyContinue
+            $bootSession = if ($boot) { $boot.TimeCreated.ToUniversalTime().ToString('O') }
+              else { (Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().ToString('O') }
+            $entries = @($gpus) + @([pscustomobject]@{ CpuName=$cpu.Name; BootSession=$bootSession })
+            [Console]::WriteLine([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($entries | ConvertTo-Json -Compress))))
+            """;
         var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
         var start = new ProcessStartInfo("powershell.exe", $"-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand {encoded}")
         {
@@ -77,13 +129,15 @@ internal static class Program
         if (string.IsNullOrWhiteSpace(encodedResult)) throw new InvalidOperationException("No AMD display adapter was detected.");
         var entries = JsonSerializer.Deserialize<List<HardwareEntry>>(Decode(encodedResult)) ?? [];
         var cpuName = entries.LastOrDefault()?.CpuName ?? "";
+        var bootSession = entries.LastOrDefault()?.BootSession;
+        if (string.IsNullOrWhiteSpace(bootSession)) throw new InvalidOperationException("Could not identify the Windows boot session.");
         var adapters = entries.Where(entry => !string.IsNullOrWhiteSpace(entry.InstanceId)).ToList();
         var primaryName = RadeonPatcher.DisplayTopology.GetPrimaryAdapterName();
         var primaryGpu = adapters.FirstOrDefault(adapter => string.Equals(adapter.Name, primaryName, StringComparison.OrdinalIgnoreCase) && !IsCpuGraphics(adapter.InstanceId));
         var cpuGraphics = adapters.FirstOrDefault(adapter => IsCpuGraphics(adapter.InstanceId));
         var gpu = primaryGpu ?? cpuGraphics ?? adapters.FirstOrDefault(adapter => !IsCpuGraphics(adapter.InstanceId));
         if (gpu is null) throw new InvalidOperationException("No AMD display adapter was detected.");
-        return new Hardware(gpu.Name!, gpu.InstanceId!, cpuName);
+        return new Hardware(gpu.Name!, gpu.InstanceId!, cpuName, bootSession);
     }
 
     private static string? ResolveSupportUrl(string gpuName, string cpuName)
@@ -178,9 +232,10 @@ internal static class Program
 
     private static string Decode(string value) => Encoding.UTF8.GetString(Convert.FromBase64String(value.Trim()));
     private static bool IsCpuGraphics(string? instanceId) => Regex.IsMatch(instanceId ?? "", $@"DEV_({RadeonPatcher.AmdCpuGraphicsHardware.DeviceIdAlternation})", RegexOptions.IgnoreCase);
-    private sealed record Hardware(string GpuName, string InstanceId, string CpuName);
-    private sealed record HardwareEntry(string? Name, string? InstanceId, string? CpuName = null);
+    private sealed record Hardware(string GpuName, string InstanceId, string CpuName, string BootSession);
+    private sealed record HardwareEntry(string? Name, string? InstanceId, string? CpuName = null, string? BootSession = null);
     private sealed record DriverReceipt(string GpuInstanceId, string OriginalInf, string PackageVersion, DateTimeOffset InstalledAt);
     private sealed record CheckerSettings(string? LastApplicationPath);
-    private sealed record CheckResult(bool UpdateAvailable, string? CurrentVersion, string LatestVersion, string Message);
+    private sealed record NotificationState(string BootSession);
+    private sealed record CheckResult(bool UpdateAvailable, string? CurrentVersion, string LatestVersion, string BootSession, string Message);
 }

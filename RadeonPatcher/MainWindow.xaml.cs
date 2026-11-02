@@ -376,8 +376,9 @@ public partial class MainWindow : Window
                 AutoClearDownloadCacheCheck.IsChecked == true);
 
             var downloadProgress = new Progress<DriverDownloadProgress>(UpdateDownloadProgress);
+            var stopwatch = Stopwatch.StartNew();
             completedResult = await _workflow.InstallAsync(request, Log, downloadProgress);
-            Log("Install workflow finished.");
+            Log($"Install workflow finished in {stopwatch.Elapsed.TotalSeconds:F1} seconds.");
             completedRequest = request;
             installed = true;
         });
