@@ -81,4 +81,4 @@ jobs:
             --repo "${{ github.repository }}" `
             --target $sha `
             --title "RadeonPatcher $env:VERSION" `
-            --generate-notes
+            --notes-file ".github/release-notes/$env:VERSION.md"

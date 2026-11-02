@@ -48,6 +48,8 @@ Releases are produced by the manual **Build Release** GitHub Actions workflow on
 
 The workflow publishes a self-contained `RadeonPatcher.exe`, generates its SHA-256 checksum, uploads both as workflow artifacts, and creates the corresponding GitHub Release from the exact checked-out commit.
 
+Before running the workflow, commit the approved release notes to `.github/release-notes/<version>.md`. The workflow uses that file as the GitHub Release description.
+
 ## Local Build
 
 Requirements:
