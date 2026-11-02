@@ -373,10 +373,7 @@ public partial class MainWindow : Window
                     : hardware.AudioDriverVersion is null
                         ? AudioInstallSource.DriverPackage
                         : AudioInstallSource.None,
-                AutoClearDownloadCacheCheck.IsChecked == true,
-                GetPatchOptions(),
-                [.. (_settings.AppliedRadeonIdPresetIds ?? [])],
-                _settings.AppliedWindowsDriverUpdateMode);
+                AutoClearDownloadCacheCheck.IsChecked == true);
 
             var downloadProgress = new Progress<DriverDownloadProgress>(UpdateDownloadProgress);
             completedResult = await _workflow.InstallAsync(request, Log, downloadProgress);
@@ -387,12 +384,6 @@ public partial class MainWindow : Window
 
         if (installed && completedRequest is not null && completedResult is not null)
         {
-            _settings.AppliedRadeonIdPresetIds = completedRequest.PatchOptions.Enabled
-                ? [.. completedRequest.PatchOptions.RadeonIdPresetIds]
-                : [];
-            _settings.AppliedWindowsDriverUpdateMode = completedRequest.PatchOptions.Enabled
-                ? completedRequest.PatchOptions.WindowsDriverUpdateMode
-                : WindowsDriverUpdateMode.Default;
             RememberInstalledVersions(completedResult);
             await RefreshAfterInstallAsync(completedRequest, completedResult);
         }
@@ -851,7 +842,6 @@ public partial class MainWindow : Window
         AdrenalinCheck.IsChecked = _settings.InstallAdrenalin;
         AudioCheck.IsChecked = _settings.InstallAudioDriver;
         AutoClearDownloadCacheCheck.IsChecked = _settings.AutoClearDownloadedCache;
-        UpdateAdvancedPatchesSummary();
         _applyingSettings = false;
         InstallDisplayDriverCheck.Checked += (_, _) => SaveSettings();
         InstallDisplayDriverCheck.Unchecked += (_, _) => SaveSettings();
@@ -885,89 +875,6 @@ public partial class MainWindow : Window
         var currentSettings = UserSettingsStore.Load();
         _settings.IgnoredAppUpdateVersion = currentSettings.IgnoredAppUpdateVersion;
         UserSettingsStore.Save(_settings);
-    }
-
-    private DriverPatchOptions GetPatchOptions() => new(
-        _settings.EnableAdvancedPatches,
-        _settings.DisableDriverAnalytics,
-        _settings.EnableDriverFeatureOverrides,
-        _settings.EnableLegacyRebarInfSupport,
-        _settings.UseHybridDriver,
-        string.IsNullOrWhiteSpace(_settings.ModernDriverSupportUrl)
-            ? DriverPatchOptions.DefaultModernDriverSupportUrl
-            : _settings.ModernDriverSupportUrl,
-        _settings.RebarMode,
-        _settings.HardwareSchedulingMode,
-        _settings.HardwareFlipQueueMode,
-        _settings.ShaderCacheMode,
-        _settings.WindowsDriverUpdateMode,
-        [.. (_settings.RadeonIdPresetIds ?? [])]);
-
-    private void SavePatchOptions(DriverPatchOptions options)
-    {
-        _settings.EnableAdvancedPatches = options.Enabled;
-        _settings.DisableDriverAnalytics = options.DisableAnalytics;
-        _settings.EnableDriverFeatureOverrides = options.EnableFeatureOverrides;
-        _settings.EnableLegacyRebarInfSupport = options.EnableLegacyRebarInfSupport;
-        _settings.UseHybridDriver = options.UseHybridDriver;
-        _settings.ModernDriverSupportUrl = options.ModernDriverSupportUrl;
-        _settings.RebarMode = options.RebarMode;
-        _settings.HardwareSchedulingMode = options.HardwareSchedulingMode;
-        _settings.HardwareFlipQueueMode = options.HardwareFlipQueueMode;
-        _settings.ShaderCacheMode = options.ShaderCacheMode;
-        _settings.WindowsDriverUpdateMode = options.WindowsDriverUpdateMode;
-        _settings.RadeonIdPresetIds = [.. options.RadeonIdPresetIds];
-        SaveSettings();
-        UpdateAdvancedPatchesSummary();
-    }
-
-    private void UpdateAdvancedPatchesSummary()
-    {
-        var options = GetPatchOptions();
-        if (!options.Enabled)
-        {
-            AdvancedPatchesButton.ToolTip = "AMD defaults; no advanced patches selected.";
-            return;
-        }
-
-        var enabled = new List<string>();
-        if (options.DisableAnalytics) enabled.Add("privacy");
-        if (options.EnableFeatureOverrides) enabled.Add("feature flags");
-        if (options.EnableLegacyRebarInfSupport) enabled.Add("legacy ReBAR INF");
-        if (options.UseHybridDriver) enabled.Add("hybrid user-mode components");
-        if (options.RadeonIdPresetIds.Count > 0) enabled.Add($"Radeon-ID presets ({options.RadeonIdPresetIds.Count})");
-        if (options.HasRuntimeTweaks) enabled.Add("runtime overrides");
-        AdvancedPatchesButton.ToolTip = enabled.Count == 0
-            ? "Advanced patching enabled; all options use AMD defaults."
-            : $"Enabled: {string.Join(", ", enabled)}.";
-    }
-
-    private async void AdvancedPatchesButton_Click(object sender, RoutedEventArgs e)
-    {
-        var dialog = new AdvancedPatchesWindow(GetPatchOptions()) { Owner = this };
-        if (dialog.ShowDialog() != true) return;
-
-        SavePatchOptions(dialog.Options);
-        if (!dialog.ApplyRuntimeNow) return;
-
-        await Busy(async () =>
-        {
-            var hardware = _hardware ?? await _workflow.GetHardwareInfoAsync();
-            await _workflow.ApplyRuntimeTweaksAsync(
-                hardware,
-                dialog.Options,
-                _settings.AppliedRadeonIdPresetIds ?? [],
-                _settings.AppliedWindowsDriverUpdateMode,
-                Log);
-            _settings.AppliedRadeonIdPresetIds = dialog.Options.Enabled
-                ? [.. dialog.Options.RadeonIdPresetIds]
-                : [];
-            _settings.AppliedWindowsDriverUpdateMode = dialog.Options.Enabled
-                ? dialog.Options.WindowsDriverUpdateMode
-                : WindowsDriverUpdateMode.Default;
-            SaveSettings();
-            Log("Runtime driver overrides applied. Restart Windows to ensure all changes take effect.");
-        });
     }
 
     private TimeSpan GetSavedUpdateCheckFrequency()
@@ -1012,7 +919,6 @@ public partial class MainWindow : Window
         ClearDownloadCacheButton.IsEnabled = !busy && _hasDownloadCache;
         ThemeCombo.IsEnabled = !busy;
         AboutButton.IsEnabled = true;
-        AdvancedPatchesButton.IsEnabled = !busy;
         InstallButton.IsEnabled = !busy;
         ToggleMpoButton.IsEnabled = !busy;
         UpdateCheckServiceButton.IsEnabled = !busy;
