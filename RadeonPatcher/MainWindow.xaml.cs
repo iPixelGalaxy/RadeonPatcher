@@ -377,9 +377,19 @@ public partial class MainWindow : Window
         var installed = false;
         InstallRequest? completedRequest = null;
         InstallResult? completedResult = null;
+        IReadOnlyList<string>? restartReasons = null;
         await Busy(async () =>
         {
             var hardware = _hardware ?? await _workflow.GetHardwareInfoAsync();
+            restartReasons = await _workflow.GetInstallRestartReasonsAsync(hardware);
+            if (restartReasons.Count > 0)
+            {
+                _restartRequired = true;
+                InstallOutcomeText.Text = "Restart Windows before installing another AMD driver or software update.";
+                InstallOutcomeText.Visibility = Visibility.Visible;
+                Log("Installation postponed: " + string.Join(" ", restartReasons));
+                return;
+            }
             var request = new InstallRequest(
                 hardware,
                 DriverCombo.SelectedItem as DriverSelection,
@@ -403,6 +413,14 @@ public partial class MainWindow : Window
             completedRequest = request;
             installed = true;
         });
+
+        if (restartReasons?.Count > 0)
+        {
+            PromptForRestart("Restart required before installation",
+                string.Join(Environment.NewLine, restartReasons) + Environment.NewLine + Environment.NewLine +
+                "Restart Windows, then run the installation again. No installation was started.");
+            return;
+        }
 
         if (installed && completedRequest is not null && completedResult is not null)
         {

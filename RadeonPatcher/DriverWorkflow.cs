@@ -116,6 +116,7 @@ public sealed class DriverWorkflow : IDisposable
     private static readonly Regex HtmlTagRegex = new("<.*?>", RegexOptions.Compiled | RegexOptions.Singleline);
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromMinutes(10) };
     private readonly Dictionary<string, IReadOnlyList<DriverRelease>> _driverCache = new(StringComparer.OrdinalIgnoreCase);
+    private bool _driverRestartRequired;
 
     public string WorkRoot { get; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "RadeonPatcher");
     private string ToolsRoot => Path.Combine(WorkRoot, "tools");
@@ -440,11 +441,58 @@ public sealed class DriverWorkflow : IDisposable
         return result;
     }
 
+    internal Task<IReadOnlyList<string>> GetInstallRestartReasonsAsync(HardwareInfo hardware) => Task.Run<IReadOnlyList<string>>(() =>
+    {
+        var reasons = new List<string>();
+        if (_driverRestartRequired)
+            reasons.Add("A previous AMD driver operation requires a Windows restart.");
+
+        using var servicing = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending");
+        if (servicing is not null)
+            reasons.Add("Windows has pending system updates that require a restart.");
+        using var windowsUpdate = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired");
+        if (windowsUpdate is not null)
+            reasons.Add("Windows Update requires a restart.");
+
+        var devices = (hardware.DisplayAdapters ?? [])
+            .Select(adapter => adapter.InstanceId)
+            .Append(hardware.GpuInstanceId)
+            .Append(hardware.CpuGraphicsAdapter?.InstanceId)
+            .Where(id => id?.StartsWith(@"PCI\VEN_1002&", StringComparison.OrdinalIgnoreCase) == true)
+            .Select(id => id!)
+            .ToList();
+        using var audio = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Enum\HDAUDIO");
+        foreach (var deviceId in audio?.GetSubKeyNames() ?? [])
+        {
+            if (!deviceId.StartsWith("FUNC_01&VEN_1002&DEV_AA01", StringComparison.OrdinalIgnoreCase)) continue;
+            using var device = audio!.OpenSubKey(deviceId);
+            foreach (var instance in device?.GetSubKeyNames() ?? [])
+                devices.Add($@"HDAUDIO\{deviceId}\{instance}");
+        }
+
+        foreach (var instanceId in devices.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            // NORMAL locates only devices in the current device tree, excluding old disconnected adapters.
+            if (CM_Locate_DevNode(out var deviceInstance, instanceId, 0) != 0) continue;
+            var result = CM_Get_DevNode_Status(out var status, out var problem, deviceInstance, 0);
+            if (result != 0)
+                throw new InvalidOperationException($"Windows could not report the restart status for {instanceId} (Configuration Manager error {result}).");
+            if ((status & DeviceNeedsRestart) != 0 || ((status & DeviceHasProblem) != 0 && problem == ProblemNeedsRestart))
+                reasons.Add("An AMD display or HD Audio device is waiting for a Windows restart.");
+        }
+
+        return reasons.Distinct(StringComparer.Ordinal).ToArray();
+    });
+
     public async Task<InstallResult> InstallAsync(
         InstallRequest request,
         Action<string> log,
         IProgress<DriverDownloadProgress>? downloadProgress = null)
     {
+        var restartReasons = await GetInstallRestartReasonsAsync(request.Hardware);
+        if (restartReasons.Count > 0)
+            throw new InvalidOperationException("Restart Windows before installing AMD drivers or software." + Environment.NewLine + string.Join(Environment.NewLine, restartReasons));
+
         string? primaryGpuPackageVersion = null;
         string? cpuGraphicsPackageVersion = null;
         string? audioDriverVersion = null;
@@ -1063,7 +1111,7 @@ public sealed class DriverWorkflow : IDisposable
         return patchedRebootRequired;
     }
 
-    private static async Task<bool> ForceInstallDriverAsync(string infPath, string? hardwareId, string component, Action<string> log)
+    private async Task<bool> ForceInstallDriverAsync(string infPath, string? hardwareId, string component, Action<string> log)
     {
         if (string.IsNullOrWhiteSpace(hardwareId))
         {
@@ -1083,8 +1131,16 @@ public sealed class DriverWorkflow : IDisposable
                 out var needsReboot);
             if (!installed)
             {
-                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), $"Forced {component} driver installation failed.");
+                var error = Marshal.GetLastWin32Error();
+                if (error == ErrorPnpQueryRemoveTimeout)
+                {
+                    _driverRestartRequired = true;
+                    throw new System.ComponentModel.Win32Exception(error,
+                        $"Windows timed out while restarting the {component} device. Restart Windows before trying another driver installation.");
+                }
+                throw new System.ComponentModel.Win32Exception(error, $"Forced {component} driver installation failed.");
             }
+            _driverRestartRequired |= needsReboot;
             return needsReboot;
         });
 
@@ -1290,7 +1346,7 @@ public sealed class DriverWorkflow : IDisposable
 
     private sealed record AudioDevice(string InstanceId, string HardwareId);
 
-    private static async Task<AudioInstallResult> InstallAudioInfAsync(string inf, Action<string> log)
+    private async Task<AudioInstallResult> InstallAudioInfAsync(string inf, Action<string> log)
     {
         var output = await RunPowerShellAsync("""
             $ErrorActionPreference = 'Stop'
@@ -1333,12 +1389,6 @@ public sealed class DriverWorkflow : IDisposable
     private async Task<bool> InstallAdrenalinAsync(string packageRoot, bool replaceExisting, Action<string> log)
     {
         var rebootRequired = false;
-        if (replaceExisting && FindAdrenalinUninstallCommand() is not null)
-        {
-            log("Removing existing AMD Software before installing the selected driver version.");
-            rebootRequired |= await RemoveAdrenalinAsync(log);
-        }
-
         var installer = Directory.EnumerateFiles(packageRoot, "ccc2_install.exe", SearchOption.AllDirectories)
             .OrderByDescending(p => p.Length)
             .FirstOrDefault();
@@ -1348,11 +1398,83 @@ public sealed class DriverWorkflow : IDisposable
             throw new FileNotFoundException("The selected package does not contain the AMD Software installer ccc2_install.exe.");
         }
 
-        log($"Installing AMD Software: Adrenalin Edition: {installer}");
-        var exit = await RunProcessAsync(installer, "", log, Path.GetDirectoryName(installer));
-        log("AMD Software: Adrenalin Edition installed.");
+        // The bootstrapper can return zero without installing its child MSI packages.
+        // Read the MSI identities themselves; the bundled JSON can contain stale product codes and versions.
+        var softwareRoot = Path.Combine(packageRoot, "RadeonPatcher-Adrenalin");
+        Directory.CreateDirectory(softwareRoot);
+        log("Extracting AMD Software component installers.");
+        await RunProcessAsync(Path.Combine(ToolsRoot, "7z.exe"), $"x \"{installer}\" -o\"{softwareRoot}\" -y -bso0 -bsp0", log);
+        var settingsPath = Path.Combine(softwareRoot, "CN", "cnext", "cnext64", "ccc-next64.msi");
+        if (!File.Exists(settingsPath))
+            throw new FileNotFoundException("The selected package does not contain the AMD Settings MSI.", settingsPath);
+        var packages = new[]
+        {
+            settingsPath,
+            Path.Combine(softwareRoot, "CN", "amddvr", "amddvr64", "amddvr64.msi"),
+            Path.Combine(softwareRoot, "CN", "wvr64", "WVR64.msi")
+        }.Where(File.Exists).Select(WindowsInstallerPackage.Read).ToArray();
+
+        var logRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RadeonPatcher", "logs",
+            $"amd-software-{DateTime.Now:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(logRoot);
+        log($"AMD Software installer logs: {logRoot}");
+        if (replaceExisting || File.Exists(@"C:\Program Files\AMD\CNext\CNext\RadeonSoftware.exe"))
+            await BackupAdrenalinSettingsAsync(log);
+
+        var runtime = Directory.EnumerateFiles(softwareRoot, "VC_redist.x64.exe", SearchOption.AllDirectories).FirstOrDefault();
+        if (runtime is not null)
+        {
+            using var installedRuntime = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64");
+            var installedVersion = (installedRuntime?.GetValue("Version") as string)?.TrimStart('v', 'V');
+            var requiredVersion = FileVersionInfo.GetVersionInfo(runtime).FileVersion;
+            if (installedRuntime?.GetValue("Installed") is not int installed || installed != 1 ||
+                !Version.TryParse(installedVersion, out var current) || !Version.TryParse(requiredVersion, out var required) || current < required)
+            {
+                log("Installing the Visual C++ runtime required by AMD Software.");
+                var runtimeExit = await RunProcessAsync(runtime, "/install /quiet /norestart", log);
+                rebootRequired |= runtimeExit == 3010;
+                _driverRestartRequired |= runtimeExit == 3010;
+            }
+        }
+
+        // Remove old versions before copying any new shared files. Leave the display and audio drivers alone.
+        var previousProducts = packages.Reverse()
+            .SelectMany(package => package.GetOtherInstalledProducts().Select(code => (Package: package, Code: code)))
+            .ToArray();
+        foreach (var previous in previousProducts)
+        {
+            log($"Removing the previous {previous.Package.Name} component before installing the selected version.");
+            var uninstallLog = Path.Combine(logRoot, $"uninstall-{previous.Code.Trim('{', '}')}.log");
+            rebootRequired |= await RunSoftwareMsiAsync($"/x {previous.Code}", uninstallLog, previous.Package.Name, log);
+        }
+
+        foreach (var package in packages)
+        {
+            var repair = package.IsInstalled ? " REINSTALL=ALL REINSTALLMODE=vomus" : "";
+            var launchProperties = string.Equals(Path.GetFileName(package.Path), "amddvr64.msi", StringComparison.OrdinalIgnoreCase)
+                ? " LAUNCHED_FROM_CIM=1" : "";
+            log($"Installing {package.Name} {package.Version}.");
+            var installLog = Path.Combine(logRoot, Path.GetFileNameWithoutExtension(package.Path) + ".log");
+            rebootRequired |= await RunSoftwareMsiAsync($"/i \"{package.Path}\"{repair}{launchProperties}", installLog, package.Name, log);
+            if (!package.IsExpectedVersionInstalled())
+                throw new InvalidOperationException($"Windows Installer did not confirm {package.Name} {package.Version}. See {installLog}");
+            log($"Verified {package.Name} {package.Version}.");
+        }
+
+        if (!File.Exists(@"C:\Program Files\AMD\CNext\CNext\RadeonSoftware.exe"))
+            throw new InvalidOperationException($"AMD Settings is registered, but RadeonSoftware.exe is missing. See installer logs in {logRoot}");
+        log("AMD Software: Adrenalin Edition installation verified.");
         await RestoreAdrenalinSettingsAsync(log);
-        return rebootRequired || exit == 3010;
+        return rebootRequired;
+    }
+
+    private async Task<bool> RunSoftwareMsiAsync(string operation, string logPath, string name, Action<string> log)
+    {
+        var exit = await RunProcessAsync("msiexec.exe", $"{operation} /qn /norestart REBOOT=ReallySuppress /L*v \"{logPath}\"", log, throwOnError: false);
+        if (exit is not (0 or 3010))
+            throw new InvalidOperationException($"{name} installation failed with Windows Installer error {exit}. See {logPath}");
+        _driverRestartRequired |= exit == 3010;
+        return exit == 3010;
     }
 
     private async Task SignPackageAsync(string packageDirectory, string infPath, Action<string> log)
@@ -1803,6 +1925,16 @@ public sealed class DriverWorkflow : IDisposable
 
     private const uint InstallFlagForce = 0x00000001;
     private const uint InstallFlagNonInteractive = 0x00000004;
+    private const uint DeviceHasProblem = 0x00000400;
+    private const uint DeviceNeedsRestart = 0x00000100;
+    private const uint ProblemNeedsRestart = 14;
+    private const int ErrorPnpQueryRemoveTimeout = 480;
+
+    [DllImport("cfgmgr32.dll", CharSet = CharSet.Unicode, EntryPoint = "CM_Locate_DevNodeW")]
+    private static extern uint CM_Locate_DevNode(out uint deviceInstance, string deviceId, uint flags);
+
+    [DllImport("cfgmgr32.dll")]
+    private static extern uint CM_Get_DevNode_Status(out uint status, out uint problem, uint deviceInstance, uint flags);
 
     [DllImport("newdev.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern bool UpdateDriverForPlugAndPlayDevices(
