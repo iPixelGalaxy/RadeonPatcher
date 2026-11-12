@@ -601,9 +601,11 @@
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
-                    <DockPanel Margin="0,0,0,10">
-                        <TextBlock DockPanel.Dock="Left" FontWeight="SemiBold" Text="Log"/>
-                    </DockPanel>
+                    <StackPanel Margin="0,0,0,10">
+                        <TextBlock FontWeight="SemiBold" Text="Log"/>
+                        <TextBlock x:Name="InstallOutcomeText" Margin="0,8,0,0" TextWrapping="Wrap"
+                                   Visibility="Collapsed"/>
+                    </StackPanel>
                     <TextBox x:Name="LogBox" Grid.Row="1" FontFamily="Consolas" FontSize="12" IsReadOnly="True"
                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                              TextWrapping="NoWrap" Background="{DynamicResource LogBackgroundBrush}" Foreground="{DynamicResource LogForegroundBrush}"

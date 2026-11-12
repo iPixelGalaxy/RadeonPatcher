@@ -104,7 +104,10 @@ public sealed record UpdateCheckResult(
 public sealed record InstallResult(
     string? PrimaryGpuPackageVersion,
     string? CpuGraphicsPackageVersion,
-    string? AudioDriverVersion);
+    string? AudioDriverVersion,
+    bool RebootRequired);
+
+internal sealed record AudioInstallResult(string? Version, bool RebootRequired = false);
 
 [SupportedOSPlatform("windows")]
 public sealed class DriverWorkflow : IDisposable
@@ -445,6 +448,7 @@ public sealed class DriverWorkflow : IDisposable
         string? primaryGpuPackageVersion = null;
         string? cpuGraphicsPackageVersion = null;
         string? audioDriverVersion = null;
+        var rebootRequired = false;
         await EnsurePayloadsAsync();
         var preparedPackages = new Dictionary<string, string>(StringComparer.Ordinal);
         async Task<string> PreparePackageAsync(DriverRelease driver)
@@ -482,7 +486,7 @@ public sealed class DriverWorkflow : IDisposable
             if (request.InstallPrimaryGpuDriver)
             {
                 if (packageRoot is null) throw new InvalidOperationException("Primary GPU package was not prepared.");
-                await InstallDisplayDriverAsync(packageRoot, request.Hardware.GpuInstanceId, request.EnableServerCompatibility, request.Driver.Primary, log);
+                rebootRequired |= await InstallDisplayDriverAsync(packageRoot, request.Hardware.GpuInstanceId, request.EnableServerCompatibility, request.Driver.Primary, log);
                 primaryGpuPackageVersion = request.Driver.VersionText;
             }
             if (request.InstallCpuGraphicsDriver && request.Hardware.CpuGraphicsAdapter is not null)
@@ -490,24 +494,29 @@ public sealed class DriverWorkflow : IDisposable
                 var cpuRoot = cpuGraphicsIsPrimaryTarget ? packageRoot : cpuPackageRoot;
                 var cpuDriver = request.Driver.CpuGraphics ?? request.Driver.Primary;
                 if (cpuRoot is null) throw new InvalidOperationException("CPU graphics package was not prepared.");
-                await InstallDisplayDriverAsync(cpuRoot, request.Hardware.CpuGraphicsAdapter.InstanceId, request.EnableServerCompatibility, cpuDriver, log);
+                if (!cpuGraphicsIsPrimaryTarget || !request.InstallPrimaryGpuDriver)
+                    rebootRequired |= await InstallDisplayDriverAsync(cpuRoot, request.Hardware.CpuGraphicsAdapter.InstanceId, request.EnableServerCompatibility, cpuDriver, log);
                 cpuGraphicsPackageVersion = cpuDriver.VersionText;
             }
             if (request.InstallAdrenalin)
             {
                 if (packageRoot is null) throw new InvalidOperationException("AMD Software package was not prepared.");
-                await InstallAdrenalinAsync(packageRoot, request.ReplaceAdrenalin, log);
+                rebootRequired |= await InstallAdrenalinAsync(packageRoot, request.ReplaceAdrenalin, log);
             }
             if (request.AudioInstallSource == AudioInstallSource.DriverPackage)
             {
                 if (packageRoot is null) throw new InvalidOperationException("AMD HD Audio package was not prepared.");
-                audioDriverVersion = await InstallPackageAudioAsync(packageRoot, request.EnableServerCompatibility, log);
+                var audio = await InstallPackageAudioAsync(packageRoot, request.EnableServerCompatibility, log);
+                audioDriverVersion = audio.Version;
+                rebootRequired |= audio.RebootRequired;
             }
         }
 
         if (request.AudioInstallSource == AudioInstallSource.BundledLatest)
         {
-            audioDriverVersion = await InstallBundledAudioAsync(request.EnableServerCompatibility, log);
+            var audio = await InstallBundledAudioAsync(request.EnableServerCompatibility, log);
+            audioDriverVersion = audio.Version;
+            rebootRequired |= audio.RebootRequired;
         }
 
         if (request.AutoClearDownloadedCache)
@@ -515,7 +524,7 @@ public sealed class DriverWorkflow : IDisposable
             ClearDownloadCache(log);
         }
 
-        return new InstallResult(primaryGpuPackageVersion, cpuGraphicsPackageVersion, audioDriverVersion);
+        return new InstallResult(primaryGpuPackageVersion, cpuGraphicsPackageVersion, audioDriverVersion, rebootRequired);
     }
 
     public Task ClearDownloadCacheAsync(Action<string> log)
@@ -611,10 +620,10 @@ public sealed class DriverWorkflow : IDisposable
 
     public Task UninstallUpdateCheckServiceAsync(Action<string> log) => RemoveUpdateCheckServiceAsync(log);
 
-    public async Task RemoveAdrenalinAsync(Action<string> log)
+    public async Task<bool> RemoveAdrenalinAsync(Action<string> log)
     {
         await BackupAdrenalinSettingsAsync(log);
-        await RemoveAdrenalinCoreAsync(log);
+        return await RemoveAdrenalinCoreAsync(log);
     }
 
     public async Task UninstallDriverAndSoftwareAsync(HardwareInfo hardware, Action<string> log)
@@ -694,7 +703,7 @@ public sealed class DriverWorkflow : IDisposable
         await RunProcessAsync("pnputil.exe", "/scan-devices", log, throwOnError: false);
     }
 
-    private async Task RemoveAdrenalinCoreAsync(Action<string> log)
+    private async Task<bool> RemoveAdrenalinCoreAsync(Action<string> log)
     {
         if (!File.Exists(@"C:\Program Files\AMD\CNext\CNext\RadeonSoftware.exe"))
         {
@@ -708,8 +717,9 @@ public sealed class DriverWorkflow : IDisposable
         }
 
         log("Removing AMD Software: Adrenalin Edition.");
-        await RunProcessAsync(uninstall.Value.FileName, uninstall.Value.Arguments, log);
+        var exit = await RunProcessAsync(uninstall.Value.FileName, uninstall.Value.Arguments, log);
         log("AMD Software: Adrenalin Edition removed.");
+        return exit == 3010;
     }
 
     private async Task BackupAdrenalinSettingsAsync(Action<string> log)
@@ -1025,20 +1035,21 @@ public sealed class DriverWorkflow : IDisposable
         Directory.CreateDirectory(destination);
 
         log($"Extracting package to {destination}");
-        await RunProcessAsync(Path.Combine(ToolsRoot, "7z.exe"), $"x \"{packageExe}\" -o\"{destination}\" -y", log);
+        await RunProcessAsync(Path.Combine(ToolsRoot, "7z.exe"), $"x \"{packageExe}\" -o\"{destination}\" -y -bso0 -bsp0", log);
         await File.WriteAllTextAsync(markerPath, packageHash);
         return destination;
     }
 
-    private async Task InstallDisplayDriverAsync(string packageRoot, string? instanceId, bool serverCompatibility, DriverRelease driver, Action<string> log)
+    private async Task<bool> InstallDisplayDriverAsync(string packageRoot, string? instanceId, bool serverCompatibility, DriverRelease driver, Action<string> log)
     {
         var displayInf = FindDisplayInf(packageRoot, instanceId);
         if (!serverCompatibility)
         {
             log($"Installing display driver INF: {displayInf}");
-            await ForceInstallDisplayDriverAsync(displayInf, instanceId, log);
+            var rebootRequired = await ForceInstallDriverAsync(displayInf, ExtractExactHardwareId(instanceId), "display", log);
+            VerifyInstalledDriver(instanceId, displayInf, rebootRequired, "display", log);
             RecordInstalledDriver(instanceId, driver, displayInf, log);
-            return;
+            return rebootRequired;
         }
 
         var patchDirectory = CopyPackageDirectory(displayInf, "display");
@@ -1046,22 +1057,23 @@ public sealed class DriverWorkflow : IDisposable
         PatchDisplayInf(patchedInf, instanceId, log);
         await SignPackageAsync(patchDirectory, patchedInf, log);
         log($"Installing patched display driver INF: {patchedInf}");
-        await ForceInstallDisplayDriverAsync(patchedInf, instanceId, log);
+        var patchedRebootRequired = await ForceInstallDriverAsync(patchedInf, ExtractExactHardwareId(instanceId), "display", log);
+        VerifyInstalledDriver(instanceId, patchedInf, patchedRebootRequired, "display", log);
         RecordInstalledDriver(instanceId, driver, patchedInf, log);
+        return patchedRebootRequired;
     }
 
-    private static async Task ForceInstallDisplayDriverAsync(string infPath, string? instanceId, Action<string> log)
+    private static async Task<bool> ForceInstallDriverAsync(string infPath, string? hardwareId, string component, Action<string> log)
     {
-        var hardwareId = ExtractExactHardwareId(instanceId);
         if (string.IsNullOrWhiteSpace(hardwareId))
         {
-            throw new InvalidOperationException("Could not determine the exact GPU hardware ID for forced display driver installation.");
+            throw new InvalidOperationException($"Could not determine the exact hardware ID for {component} driver installation.");
         }
 
-        log($"Staging and installing display driver for {hardwareId}. Windows may take several minutes to copy driver files.");
+        log($"Staging and installing {component} driver for {hardwareId}. Windows may take several minutes to copy driver files.");
         var stopwatch = Stopwatch.StartNew();
         // This API stages the package itself; a separate pnputil pass repeats that work.
-        var rebootRequired = await Task.Run(() =>
+        var install = Task.Run(() =>
         {
             var installed = UpdateDriverForPlugAndPlayDevices(
                 IntPtr.Zero,
@@ -1071,15 +1083,58 @@ public sealed class DriverWorkflow : IDisposable
                 out var needsReboot);
             if (!installed)
             {
-                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "Forced display driver installation failed.");
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), $"Forced {component} driver installation failed.");
             }
             return needsReboot;
         });
 
-        log($"Display driver staging and installation took {stopwatch.Elapsed.TotalSeconds:F1} seconds.");
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(10));
+        var progress = ReportInstallProgressAsync();
+        bool rebootRequired;
+        try
+        {
+            rebootRequired = await install;
+        }
+        finally
+        {
+            timer.Dispose();
+            await progress;
+        }
+
+        async Task ReportInstallProgressAsync()
+        {
+            while (await timer.WaitForNextTickAsync())
+                log($"Windows is still installing the {component} driver ({stopwatch.Elapsed.TotalSeconds:F0} seconds elapsed). Please wait.");
+        }
+
+        log($"The {component} driver staging and installation took {stopwatch.Elapsed.TotalSeconds:F1} seconds.");
         log(rebootRequired
-            ? "Display driver installed. Windows reports a reboot is required."
-            : "Display driver installed.");
+            ? $"The {component} driver is configured. Restart Windows to activate it."
+            : $"The {component} driver is installed.");
+        return rebootRequired;
+    }
+
+    private static void VerifyInstalledDriver(string? instanceId, string infPath, bool rebootRequired, string component, Action<string> log)
+    {
+        using var device = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Enum\" + instanceId);
+        var driverKey = device?.GetValue("Driver") as string;
+        using var driver = string.IsNullOrWhiteSpace(driverKey) ? null
+            : Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Class\" + driverKey);
+        var version = driver?.GetValue("DriverVersion") as string;
+        var publishedInf = driver?.GetValue("InfPath") as string;
+        var expectedVersion = GetInfDriverVersion(infPath);
+        var installedInf = string.IsNullOrWhiteSpace(publishedInf) ? null
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "INF", Path.GetFileName(publishedInf));
+        if (expectedVersion is null || !string.Equals(version, expectedVersion, StringComparison.OrdinalIgnoreCase) ||
+            installedInf is null || !File.Exists(installedInf) ||
+            !File.ReadAllBytes(installedInf).AsSpan().SequenceEqual(File.ReadAllBytes(infPath)))
+        {
+            throw new InvalidOperationException($"Windows did not confirm the selected {component} driver for {instanceId}. Expected {expectedVersion ?? "unknown"}; reported {version ?? "none"}." +
+                (rebootRequired ? " Windows requested a restart. Restart Windows, then refresh driver information before retrying." : " See Windows INF\\setupapi.dev.log for details."));
+        }
+
+        log($"Verified {component} driver {version} ({publishedInf}) on {instanceId}." +
+            (rebootRequired ? " Activation requires a Windows restart." : ""));
     }
 
     private string? ResolvePackageVersion(HardwareInfo hardware)
@@ -1098,10 +1153,7 @@ public sealed class DriverWorkflow : IDisposable
             .Where(x => string.Equals(x.GpuInstanceId, instanceId, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(x => x.InstalledAt)
             .ToList();
-        var receipt = string.IsNullOrWhiteSpace(originalInf)
-            ? receipts.FirstOrDefault()
-            : receipts.FirstOrDefault(x => string.Equals(x.OriginalInf, originalInf, StringComparison.OrdinalIgnoreCase))
-                ?? receipts.FirstOrDefault();
+        var receipt = receipts.FirstOrDefault(x => string.Equals(x.OriginalInf, originalInf, StringComparison.OrdinalIgnoreCase));
         if (receipt is not null)
         {
             return receipt.PackageVersion;
@@ -1193,12 +1245,8 @@ public sealed class DriverWorkflow : IDisposable
         }
     }
 
-    private async Task<string?> InstallBundledAudioAsync(bool serverCompatibility, Action<string> log)
+    private async Task<AudioInstallResult> InstallBundledAudioAsync(bool serverCompatibility, Action<string> log)
     {
-        var currentHardware = await GetHardwareInfoAsync();
-        var reinstall = Version.TryParse(currentHardware.AudioDriverVersion, out var installedVersion) &&
-            installedVersion >= new Version(10, 0, 1, 42);
-
         var sourceInf = Path.Combine(AudioPayloadRoot, "AtihdWT6.inf");
         if (!File.Exists(sourceInf))
         {
@@ -1213,26 +1261,18 @@ public sealed class DriverWorkflow : IDisposable
             await SignPackageAsync(package, inf, log);
         }
 
-        if (reinstall)
-        {
-            log("Removing the installed AMD HD Audio driver before reinstalling the bundled version.");
-            await UninstallAmdDriverPackagesAsync("MEDIA", "HD Audio", log);
-            await ScanForDeviceChangesAsync(log);
-        }
-
         log($"Installing bundled AMD HD Audio driver: {inf}");
-        await RunProcessAsync("pnputil.exe", $"/add-driver \"{inf}\" /install", log, allowNoUpdate: true);
-        return GetInfDriverVersion(inf);
+        return await InstallAudioInfAsync(inf, log);
     }
 
-    private async Task<string?> InstallPackageAudioAsync(string packageRoot, bool serverCompatibility, Action<string> log)
+    private async Task<AudioInstallResult> InstallPackageAudioAsync(string packageRoot, bool serverCompatibility, Action<string> log)
     {
         var sourceInf = Directory.EnumerateFiles(packageRoot, "AtihdWT6.inf", SearchOption.AllDirectories)
             .FirstOrDefault(path => path.Contains($"{Path.DirectorySeparatorChar}Audio{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase));
         if (sourceInf is null)
         {
             log("The selected GPU package does not contain an AMD HD Audio driver.");
-            return null;
+            return new AudioInstallResult(null);
         }
 
         var inf = sourceInf;
@@ -1245,8 +1285,42 @@ public sealed class DriverWorkflow : IDisposable
         }
 
         log($"Installing AMD HD Audio driver included with the selected GPU package: {inf}");
-        await RunProcessAsync("pnputil.exe", $"/add-driver \"{inf}\" /install", log, allowNoUpdate: true);
-        return GetInfDriverVersion(inf);
+        return await InstallAudioInfAsync(inf, log);
+    }
+
+    private sealed record AudioDevice(string InstanceId, string HardwareId);
+
+    private static async Task<AudioInstallResult> InstallAudioInfAsync(string inf, Action<string> log)
+    {
+        var output = await RunPowerShellAsync("""
+            $ErrorActionPreference = 'Stop'
+            $devices = @(Get-PnpDevice -PresentOnly -Class MEDIA -ErrorAction SilentlyContinue |
+              Where-Object { $_.InstanceId -like 'HDAUDIO\FUNC_01&VEN_1002&DEV_AA01*' } |
+              ForEach-Object {
+                $ids = @((Get-PnpDeviceProperty -InstanceId $_.InstanceId -KeyName 'DEVPKEY_Device_HardwareIds' -ErrorAction Stop).Data)
+                [pscustomobject]@{ InstanceId=$_.InstanceId; HardwareId=$ids[0] }
+              })
+            ConvertTo-Json -InputObject $devices -Compress
+            """);
+        var devices = JsonSerializer.Deserialize<List<AudioDevice>>(output.Trim()) ?? [];
+        if (devices.Count == 0)
+        {
+            log("No connected AMD HD Audio device was found. Audio driver installation skipped.");
+            return new AudioInstallResult(null);
+        }
+
+        var rebootRequired = false;
+        foreach (var group in devices.GroupBy(device => device.HardwareId, StringComparer.OrdinalIgnoreCase))
+        {
+            // Force the selected version directly, including reinstalls and downgrades.
+            // Removing every AMD media package first also removes unrelated devices and triggers fallback installs.
+            var needsReboot = await ForceInstallDriverAsync(inf, group.Key, "AMD HD Audio", log);
+            rebootRequired |= needsReboot;
+            foreach (var device in group)
+                VerifyInstalledDriver(device.InstanceId, inf, needsReboot, "AMD HD Audio", log);
+        }
+
+        return new AudioInstallResult(GetInfDriverVersion(inf), rebootRequired);
     }
 
     private static string? GetInfDriverVersion(string infPath)
@@ -1256,12 +1330,13 @@ public sealed class DriverWorkflow : IDisposable
         return string.IsNullOrWhiteSpace(version) ? null : version;
     }
 
-    private async Task InstallAdrenalinAsync(string packageRoot, bool replaceExisting, Action<string> log)
+    private async Task<bool> InstallAdrenalinAsync(string packageRoot, bool replaceExisting, Action<string> log)
     {
+        var rebootRequired = false;
         if (replaceExisting && FindAdrenalinUninstallCommand() is not null)
         {
             log("Removing existing AMD Software before installing the selected driver version.");
-            await RemoveAdrenalinAsync(log);
+            rebootRequired |= await RemoveAdrenalinAsync(log);
         }
 
         var installer = Directory.EnumerateFiles(packageRoot, "ccc2_install.exe", SearchOption.AllDirectories)
@@ -1270,13 +1345,14 @@ public sealed class DriverWorkflow : IDisposable
         if (installer is null)
         {
             log("Adrenalin installer ccc2_install.exe was not found in the package.");
-            return;
+            throw new FileNotFoundException("The selected package does not contain the AMD Software installer ccc2_install.exe.");
         }
 
         log($"Installing AMD Software: Adrenalin Edition: {installer}");
-        await RunProcessAsync(installer, "", log, Path.GetDirectoryName(installer));
+        var exit = await RunProcessAsync(installer, "", log, Path.GetDirectoryName(installer));
         log("AMD Software: Adrenalin Edition installed.");
         await RestoreAdrenalinSettingsAsync(log);
+        return rebootRequired || exit == 3010;
     }
 
     private async Task SignPackageAsync(string packageDirectory, string infPath, Action<string> log)

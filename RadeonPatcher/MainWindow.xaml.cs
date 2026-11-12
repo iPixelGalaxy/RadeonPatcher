@@ -1,10 +1,13 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.IO;
+using System.Text;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Microsoft.Win32;
 
 namespace RadeonPatcher;
@@ -30,10 +33,28 @@ public partial class MainWindow : Window
     private string? _progressCpuName;
     private string? _progressCpuSupportUrl;
     private readonly string _appVersionTag;
+    private readonly StringBuilder _pendingLog = new();
+    private readonly DispatcherTimer _logTimer;
+    private StreamWriter? _logWriter;
+    private bool _restartRequired;
 
     public MainWindow()
     {
         InitializeComponent();
+        _logTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(200), DispatcherPriority.Background,
+            (_, _) => FlushLog(), Dispatcher);
+        try
+        {
+            var logRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RadeonPatcher", "logs");
+            Directory.CreateDirectory(logRoot);
+            var logPath = Path.Combine(logRoot, $"RadeonPatcher-{DateTime.Now:yyyyMMdd-HHmmss}-{Environment.ProcessId}.log");
+            _logWriter = new StreamWriter(logPath, append: false);
+            Log($"Session log: {logPath}");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Log("Could not open a session log: " + ex.Message);
+        }
         var version = AppUpdateService.CurrentVersion;
         _appVersionTag = $"v{version.Major}.{version.Minor}.{version.Build}";
         AppVersionText.Text = _appVersionTag;
@@ -439,13 +460,29 @@ public partial class MainWindow : Window
         var expectDisplay = result.PrimaryGpuPackageVersion is not null;
         var expectCpuGraphics = result.CpuGraphicsPackageVersion is not null;
         var expectAudio = result.AudioDriverVersion is not null;
+        _restartRequired |= result.RebootRequired;
+        InstallOutcomeText.Text = _restartRequired
+            ? "Restart required to activate the installed AMD drivers. Monitors may not flash until Windows restarts."
+            : "Installation finished. Windows did not request a restart.";
+        InstallOutcomeText.Visibility = Visibility.Visible;
         Log("Refreshing installed driver versions.");
         await RefreshAsync();
         if (expectDisplay || expectCpuGraphics || expectAudio)
         {
-            PromptForRestart("Driver installation finished", "Restart Windows to finish applying the installed AMD drivers.");
-            _ = ObserveInstalledDriverStateAsync(expectDisplay, expectCpuGraphics, expectAudio);
+            if (_restartRequired)
+            {
+                Log("Restart required. Windows configured the selected drivers but deferred activation. Monitors may not flash until restart.");
+                PromptForRestart("Drivers installed; restart required",
+                    "Windows configured the selected AMD drivers and requires a restart to finish activating them. Your monitors may not flash until Windows restarts.");
+            }
+            else
+            {
+                Log("Driver installation finished. Windows did not request a restart.");
+                _ = ObserveInstalledDriverStateAsync(result);
+            }
         }
+        else if (_restartRequired)
+            PromptForRestart("Software installed; restart required", "Restart Windows to finish applying AMD Software.");
     }
 
     private static bool IsForcedVersionCurrent(DateTimeOffset? installedAt) =>
@@ -503,7 +540,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task ObserveInstalledDriverStateAsync(bool expectDisplay, bool expectCpuGraphics, bool expectAudio)
+    private async Task ObserveInstalledDriverStateAsync(InstallResult result)
     {
         try
         {
@@ -511,9 +548,12 @@ public partial class MainWindow : Window
             {
                 await Task.Delay(1000);
                 var hardware = await _workflow.GetHardwareInfoAsync();
-                var displayReady = !expectDisplay || (hardware.DisplayDriverVersion is not null && hardware.DisplayDriverPackageVersion is not null);
-                var cpuGraphicsReady = !expectCpuGraphics || (hardware.CpuGraphicsAdapter?.DriverVersion is not null && hardware.CpuGraphicsAdapter?.PackageVersion is not null);
-                var audioReady = !expectAudio || hardware.AudioDriverVersion is not null;
+                var displayReady = result.PrimaryGpuPackageVersion is null ||
+                    string.Equals(hardware.DisplayDriverPackageVersion, result.PrimaryGpuPackageVersion, StringComparison.OrdinalIgnoreCase);
+                var cpuGraphicsReady = result.CpuGraphicsPackageVersion is null ||
+                    string.Equals(hardware.CpuGraphicsAdapter?.PackageVersion, result.CpuGraphicsPackageVersion, StringComparison.OrdinalIgnoreCase);
+                var audioReady = result.AudioDriverVersion is null ||
+                    string.Equals(hardware.AudioDriverVersion, result.AudioDriverVersion, StringComparison.OrdinalIgnoreCase);
                 if (displayReady && cpuGraphicsReady && audioReady)
                 {
                     Log("Windows finished refreshing installed driver information.");
@@ -521,6 +561,7 @@ public partial class MainWindow : Window
                     return;
                 }
             }
+            Log("Windows has not reported all selected driver versions. Refresh after restarting Windows.");
         }
         catch (Exception ex)
         {
@@ -968,15 +1009,43 @@ public partial class MainWindow : Window
 
     private void Log(string message)
     {
-        Dispatcher.Invoke(() =>
+        lock (_pendingLog)
+            _pendingLog.AppendLine($"[{DateTime.Now:HH:mm:ss}] {message}");
+    }
+
+    private void FlushLog()
+    {
+        string batch;
+        lock (_pendingLog)
         {
-            LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
-            LogBox.ScrollToEnd();
-        });
+            if (_pendingLog.Length == 0) return;
+            batch = _pendingLog.ToString();
+            _pendingLog.Clear();
+        }
+
+        try
+        {
+            _logWriter?.Write(batch);
+            _logWriter?.Flush();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            try { _logWriter?.Dispose(); }
+            catch (IOException) { }
+            _logWriter = null;
+            batch += $"Could not write the session log: {ex.Message}{Environment.NewLine}";
+        }
+
+        if (LogBox.Text.Length > 500_000) LogBox.Clear();
+        LogBox.AppendText(batch);
+        LogBox.ScrollToEnd();
     }
 
     protected override void OnClosing(CancelEventArgs e)
     {
+        _logTimer.Stop();
+        FlushLog();
+        _logWriter?.Dispose();
         SystemEvents.UserPreferenceChanged -= SystemEvents_UserPreferenceChanged;
         _workflow.Dispose();
         base.OnClosing(e);
